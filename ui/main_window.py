@@ -17,19 +17,19 @@ from PyQt6.QtGui import QDragEnterEvent, QDropEvent, QAction, QFont
 
 from src.pdf_processor import PDFProcessor, extract_text_for_preview
 from src.paraphraser import Paraphraser, ParaphraserConfig
+from src.humanizer import Humanizer, HumanizerConfig
 from src.workers import ModelLoaderWorker, FullProcessWorker
 
 
-class TextParaphraseWorker(QThread):
-    """Worker for paraphrasing text in background."""
+class TextHumanizeWorker(QThread):
+    """Worker for humanizing text in background using advanced humanizer."""
     progress = pyqtSignal(str)
     finished = pyqtSignal(bool, str)
 
-    def __init__(self, paraphraser: Paraphraser, text: str, style: str):
+    def __init__(self, humanizer: Humanizer, text: str):
         super().__init__()
-        self.paraphraser = paraphraser
+        self.humanizer = humanizer
         self.text = text
-        self.style = style
         self._cancelled = False
 
     def run(self):
@@ -38,8 +38,11 @@ class TextParaphraseWorker(QThread):
                 self.finished.emit(False, "")
                 return
 
-            self.progress.emit("Paraphrasing text...")
-            result = self.paraphraser.paraphrase(self.text, self.style)
+            def progress_callback(msg):
+                if not self._cancelled:
+                    self.progress.emit(msg)
+
+            result = self.humanizer.humanize(self.text, progress_callback)
 
             if self._cancelled:
                 self.finished.emit(False, "")
@@ -149,6 +152,7 @@ class MainWindow(QMainWindow):
 
         # Initialize components
         self.paraphraser = Paraphraser()
+        self.humanizer = Humanizer()  # Advanced humanizer for text
         self.pdf_processor = PDFProcessor()
         self.current_pdf_path = ""
         self.current_worker = None
@@ -521,7 +525,7 @@ class MainWindow(QMainWindow):
             self.statusbar.showMessage("Copied to clipboard!", 2000)
 
     def _humanize_text(self):
-        """Start text humanization."""
+        """Start text humanization using advanced humanizer."""
         text = self.input_text.toPlainText().strip()
         if not text:
             return
@@ -539,11 +543,10 @@ class MainWindow(QMainWindow):
         self.stage_label.setText("Humanizing text...")
         self.progress_bar.setRange(0, 0)  # Indeterminate
 
-        # Start worker
-        self.text_worker = TextParaphraseWorker(
-            self.paraphraser,
-            text,
-            self.style_combo.currentText()
+        # Start worker with advanced humanizer
+        self.text_worker = TextHumanizeWorker(
+            self.humanizer,
+            text
         )
         self.text_worker.progress.connect(lambda msg: self.stage_label.setText(msg))
         self.text_worker.finished.connect(self._on_text_humanized)
@@ -648,6 +651,12 @@ class MainWindow(QMainWindow):
             self.model_label.setText(model_name)
             self.model_label.setStyleSheet("color: #4CAF50; font-weight: bold;")
             self.model_loaded = True
+
+            # Also load model for humanizer (shares the same model)
+            self.humanizer.model = self.paraphraser.model
+            self.humanizer.is_loaded = True
+            self.humanizer.config.model_path = self.paraphraser.config.model_path
+
             self._update_process_button()
             self._update_humanize_button()
         else:
@@ -791,6 +800,7 @@ class MainWindow(QMainWindow):
 
         self._cleanup_workers()
         self.paraphraser.unload_model()
+        self.humanizer.unload_model()
         self.pdf_processor.close()
         event.accept()
 
