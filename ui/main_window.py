@@ -118,6 +118,7 @@ class MainWindow(QMainWindow):
         self.pdf_processor = PDFProcessor()
         self.current_pdf_path = ""
         self.current_worker = None
+        self.model_worker = None
         self.model_loaded = False
 
         # Setup UI
@@ -472,7 +473,13 @@ class MainWindow(QMainWindow):
 
     def closeEvent(self, event):
         """Handle window close."""
-        if self.current_worker and self.current_worker.isRunning():
+        # Check if any worker is running
+        workers_running = (
+            (self.current_worker and self.current_worker.isRunning()) or
+            (self.model_worker and self.model_worker.isRunning())
+        )
+
+        if workers_running:
             reply = QMessageBox.question(
                 self,
                 "Confirm Exit",
@@ -484,8 +491,13 @@ class MainWindow(QMainWindow):
                 event.ignore()
                 return
 
-            self.current_worker.cancel()
-            self.current_worker.wait(5000)
+            # Cancel and wait for workers
+            if self.current_worker and self.current_worker.isRunning():
+                self.current_worker.cancel()
+                self.current_worker.wait(5000)
+
+            if self.model_worker and self.model_worker.isRunning():
+                self.model_worker.wait(5000)
 
         # Cleanup
         self.paraphraser.unload_model()

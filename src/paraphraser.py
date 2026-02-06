@@ -182,8 +182,8 @@ class Paraphraser:
         style = style or self.current_style
         system_prompt = SYSTEM_PROMPTS.get(style, SYSTEM_PROMPTS["default"])
 
-        # Construct the prompt
-        prompt = f"""<s>[INST] {system_prompt}
+        # Construct the prompt (without <s> as llama.cpp adds it automatically)
+        prompt = f"""[INST] {system_prompt}
 
 Text to paraphrase:
 {text.strip()}
