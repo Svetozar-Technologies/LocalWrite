@@ -166,6 +166,39 @@ AI_PHRASES_TO_REMOVE = [
     "serves as a",
     "acts as a",
     "functions as a",
+    # More AI patterns
+    "dive into",
+    "dive in",
+    "delve into",
+    "delve in",
+    "it's crucial",
+    "it is crucial",
+    "it's essential",
+    "it is essential",
+    "first and foremost",
+    "last but not least",
+    "in light of",
+    "with that being said",
+    "that being said",
+    "having said that",
+    "as previously mentioned",
+    "as mentioned earlier",
+    "as stated above",
+    "in other words",
+    "to put it simply",
+    "simply put",
+    "broadly speaking",
+    "generally speaking",
+    "interestingly enough",
+    "importantly",
+    "significantly",
+    "remarkably",
+    "notably",
+    "crucially",
+    "essentially",
+    "fundamentally",
+    "ultimately",
+    "specifically",
 ]
 
 # Human filler phrases to inject
@@ -634,8 +667,8 @@ class Humanizer:
             elif word_count < 8 and i < len(sentences) - 1 and random.random() < 0.3:
                 next_sentence = sentences[i + 1].strip() if i + 1 < len(sentences) else ""
                 if next_sentence and len(next_sentence.split()) < 15:
-                    # Merge with comma or dash
-                    connector = random.choice([", ", " - ", " — "])
+                    # Merge with comma or "and" - NO DASHES (AI signal!)
+                    connector = random.choice([", ", ", and ", " and "])
                     merged = sentence.rstrip('.!?') + connector + next_sentence[0].lower() + next_sentence[1:]
                     result_sentences.append(merged)
                     sentences[i + 1] = ""  # Mark as processed
@@ -717,6 +750,15 @@ class Humanizer:
     def _final_cleanup(self, text: str) -> str:
         """Stage 7: Final cleanup and polish."""
         result = text
+
+        # IMPORTANT: Remove dashes - AI detection signal!
+        # Replace em-dashes and en-dashes with commas or periods
+        result = re.sub(r'\s*—\s*', ', ', result)  # em-dash
+        result = re.sub(r'\s*–\s*', ', ', result)  # en-dash
+        result = re.sub(r'\s+-\s+', ', ', result)  # spaced hyphen used as dash
+
+        # Fix double commas that might result
+        result = re.sub(r',\s*,', ',', result)
 
         # Fix double spaces
         result = re.sub(r'\s+', ' ', result)
