@@ -567,9 +567,12 @@ class MainWindow(QMainWindow):
             self.copy_btn.setEnabled(True)
             self.stage_label.setText("Done!")
             self.statusbar.showMessage("Text humanized successfully!", 3000)
-        elif result.startswith("Error:"):
+        elif result and result.startswith("Error:"):
             QMessageBox.critical(self, "Error", result)
             self.stage_label.setText("Error")
+        elif not result:
+            self.stage_label.setText("No output generated")
+            self.statusbar.showMessage("No output was generated. Try again.", 3000)
 
     def _reset_text_ui(self):
         """Reset text tab UI after operation."""

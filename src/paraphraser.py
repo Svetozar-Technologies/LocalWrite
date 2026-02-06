@@ -223,6 +223,8 @@ Text to paraphrase:
             # Clean up any remaining artifacts
             result = self._clean_output(result, text)
 
+            return result if result else text
+
         except Exception as e:
             if progress_callback:
                 progress_callback(f"Error during paraphrasing: {e}")
