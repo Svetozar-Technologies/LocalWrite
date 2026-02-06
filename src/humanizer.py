@@ -36,16 +36,49 @@ class HumanizerConfig:
     max_tokens: int = 512
 
 
-# Simpler, more direct prompts for Qwen
+# Optimized prompts - specific about what TO DO and NOT TO DO
 REWRITE_PROMPTS = [
-    """Rewrite this in your own words. Be natural and casual. Use contractions.
-Just output the rewritten text, nothing else.""",
+    """Rewrite like a casual blogger. Rules:
+- Use contractions: don't, it's, won't, can't, you're, that's
+- Start some sentences with And, But, So, Or
+- Mix short sentences with longer ones
+- Use simple words: get not obtain, use not utilize, help not assist, buy not purchase
+- NO dashes or semicolons
+- NO words like: crucial, essential, additionally, furthermore, consequently, comprehensive
+- Keep same meaning, just sound human
+Output only the rewritten text:""",
 
-    """Say this differently, like you're explaining to a friend. Keep it simple.
-Only output the new version.""",
+    """Rewrite this like you're texting a smart friend. Be casual but clear.
+- Contractions everywhere
+- Simple everyday words
+- Some sentences can be short. Others a bit longer and flowing.
+- Avoid formal transition words
+- No dashes
+Just the rewritten version:""",
 
-    """Rephrase this casually. Use everyday language. Be conversational.
-Output only the result.""",
+    """Say this same thing but way more casually. Like a reddit comment or blog post.
+- Use contractions (don't, it's, won't, they're)
+- Keep sentences varied, some short some long
+- Use words like: pretty much, kind of, a lot, really, actually, basically
+- Avoid academic/formal words
+- No dashes or semicolons
+Only output the result:""",
+
+    """Rewrite naturally. Imagine you're explaining this to someone over coffee.
+- Be conversational not formal
+- Use contractions
+- Simple words only
+- Vary your sentence length
+- No fancy punctuation like dashes or semicolons
+Output the rewrite only:""",
+
+    """Make this sound human-written, not AI. Key things:
+- Contractions are a must
+- Mix up sentence lengths
+- Use casual words (get, use, help, show) not formal ones (obtain, utilize, assist, demonstrate)
+- Start some sentences with And or But
+- No dashes
+Just output the new version:""",
 ]
 
 

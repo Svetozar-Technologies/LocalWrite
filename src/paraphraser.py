@@ -29,64 +29,68 @@ class ParaphraserConfig:
 
 # System prompts optimized to bypass AI detection (Copyleaks, ZeroGPT, etc.)
 SYSTEM_PROMPTS = {
-    "default": """Rewrite this text like a human blogger would write it. Make it sound natural and conversational.
+    "default": """Rewrite like a human blogger. Sound natural and casual.
 
-You MUST:
-- Change sentence structures completely - don't keep the same pattern
-- Use contractions everywhere: don't, won't, it's, that's, you've, they're, can't, isn't
-- Start some sentences with And, But, So, Or, Well, Now, Look, See, Thing is
-- Mix very short sentences with longer ones. Like this. Then write a longer one that flows naturally.
-- Use casual phrases: pretty much, kind of, a lot of, tons of, bunch of, really, actually, basically, honestly
-- Replace formal words: use "get" not "obtain", "help" not "assist", "show" not "demonstrate", "use" not "utilize", "about" not "approximately", "big" not "substantial"
-- Add filler words occasionally: just, really, actually, probably, maybe, quite, pretty
-- Keep all facts, numbers, and names exactly the same
-- Keep similar length to original
+MUST DO:
+- Contractions everywhere: don't, it's, won't, that's, can't, isn't, you're, they're
+- Start some sentences with And, But, So
+- Mix short and long sentences. Like this. Then a longer flowing one.
+- Simple words: get not obtain, use not utilize, help not assist, show not demonstrate, buy not purchase, need not require
+- Keep all facts and numbers exactly the same
 
-DO NOT:
-- Add citations, references, or sources
-- Add new information not in original
-- Use overly formal or academic language
-- Write "Here is" or any meta-commentary
+NEVER USE:
+- Dashes or semicolons
+- Words: crucial, essential, additionally, furthermore, consequently, comprehensive, utilizing, facilitate, implement, significant, substantial
+- Phrases: it's important to note, it's worth noting, in order to, due to the fact, at the end of the day
+- Any citations or references
 
-Write the rewritten text directly:""",
+Output the rewrite only:""",
 
-    "academic": """Rewrite this academic text naturally while keeping scholarly tone.
+    "academic": """Rewrite this academic text while keeping scholarly tone.
 
-You MUST:
-- Restructure sentences - don't keep same patterns
-- Vary between active and passive voice naturally
-- Use transitions: However, Moreover, Additionally, Furthermore, In addition, That said
-- Mix complex sentences with simpler ones for readability
+MUST DO:
+- Restructure sentences differently
+- Vary active and passive voice
 - Keep all facts, data, citations, and technical terms exactly
-- Maintain formal register but sound like a human researcher wrote it
+- Sound like a human researcher wrote it
 
-DO NOT add fake citations or references. Keep similar length.
+NEVER USE:
+- Dashes or semicolons
+- Fake citations
+- Overly flowery language
 
-Write the rewritten text:""",
+Output the rewrite only:""",
 
-    "casual": """Rewrite this like you're chatting with a friend. Super casual and natural.
+    "casual": """Rewrite super casually, like texting a friend.
 
-You MUST:
-- Use tons of contractions: don't, it's, won't, that's, I'd, we're, they've, can't
-- Start sentences with And, But, So, Or, Anyway, Look, Thing is
-- Use casual phrases: pretty much, kind of, you know, I mean, honestly, basically
-- Keep sentences punchy. Short works. Then mix in longer ones when needed.
-- Use simple words everyone knows
-- Keep all the facts and details the same
+MUST DO:
+- Tons of contractions: don't, it's, won't, that's, can't, you're
+- Start sentences with And, But, So, Or, Anyway
+- Casual words: pretty much, kind of, basically, honestly, really, actually
+- Short punchy sentences mixed with longer ones
+- Keep all facts the same
 
-Write it like a real person talking:""",
+NEVER USE:
+- Dashes or semicolons
+- Formal words
+- Academic language
 
-    "technical": """Rewrite this technical content clearly and naturally.
+Output the rewrite only:""",
 
-You MUST:
-- Keep ALL technical terms, code, commands, and specifications exactly unchanged
-- Use active voice: "Run the command" not "The command should be run"
-- Break complex explanations into digestible pieces
-- Use simple connecting words: then, next, after that, once done
-- Vary sentence structure naturally
-- Keep all accuracy and details
+    "technical": """Rewrite this technical content clearly.
 
-Write the rewritten technical content:"""
+MUST DO:
+- Keep ALL technical terms, code, commands exactly unchanged
+- Active voice: "Run the command" not "The command should be run"
+- Simple connecting words: then, next, after that
+- Vary sentence length
+
+NEVER USE:
+- Dashes or semicolons
+- Flowery language
+- Unnecessary filler
+
+Output the rewrite only:"""
 }
 
 
