@@ -1,20 +1,43 @@
 /* LocalWrite Landing Page Styles */
 /* Privacy-First AI Writing Assistant */
+/* Unified theme matching LocalMind */
 
 :root {
-    --primary: #4F46E5;
-    --primary-light: #818CF8;
-    --primary-dark: #3730A3;
-    --success: #10B981;
-    --danger: #EF4444;
-    --bg-dark: #0F172A;
-    --bg-darker: #020617;
-    --surface: #1E293B;
-    --surface-light: #334155;
-    --text-primary: #F8FAFC;
-    --text-secondary: #94A3B8;
-    --text-muted: #64748B;
-    --border: #334155;
+    --color-primary: #4F46E5;
+    --color-primary-light: #818CF8;
+    --color-primary-dark: #3730A3;
+    --color-secondary: #7C3AED;
+    --color-accent: #A78BFA;
+
+    --color-bg: #0a0a0a;
+    --color-bg-secondary: #111111;
+    --color-bg-card: #171717;
+    --color-bg-card-hover: #1f1f1f;
+
+    --color-text: #ffffff;
+    --color-text-secondary: #a1a1aa;
+    --color-text-muted: #71717a;
+
+    --color-border: #27272a;
+    --color-border-light: #3f3f46;
+
+    --color-success: #22c55e;
+    --color-error: #ef4444;
+
+    /* Aliases for backward compatibility */
+    --primary: var(--color-primary);
+    --primary-light: var(--color-primary-light);
+    --primary-dark: var(--color-primary-dark);
+    --success: var(--color-success);
+    --danger: var(--color-error);
+    --bg-dark: var(--color-bg);
+    --bg-darker: #050505;
+    --surface: var(--color-bg-card);
+    --surface-light: var(--color-bg-card-hover);
+    --text-primary: var(--color-text);
+    --text-secondary: var(--color-text-secondary);
+    --text-muted: var(--color-text-muted);
+    --border: var(--color-border);
     --gradient-start: #4F46E5;
     --gradient-end: #7C3AED;
 }
