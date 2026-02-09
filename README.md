@@ -35,7 +35,7 @@ Your writing deserves privacy. LocalWrite enhances your text using powerful loca
 
 1. Clone the repository:
    ```bash
-   git clone https://github.com/svetozar-technologies/localwrite.git
+   git clone https://github.com/Svetozar-Technologies/LocalWrite.git
    cd localwrite
    ```
 
@@ -126,4 +126,4 @@ MIT License - Free to use, modify, and distribute.
 
 **Built with privacy in mind.**
 
-A [Svetozar Technologies](https://github.com/svetozar-technologies) project.
+A [Svetozar Technologies](https://github.com/Svetozar-Technologies) project.
