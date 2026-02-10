@@ -1692,16 +1692,61 @@ Remember: Only answer from the excerpts above. Do not hallucinate or add externa
             return True
 
         try:
-            from src.rag_engine import RAGEngine, check_rag_dependencies
+            from src.rag_engine import RAGEngine, check_rag_dependencies, install_rag_dependencies
 
             # Check dependencies first
-            deps_ok, deps_msg = check_rag_dependencies()
+            deps_ok, missing_deps = check_rag_dependencies()
             if not deps_ok:
-                QMessageBox.warning(
-                    self, "Missing Dependencies",
-                    f"RAG feature requires additional packages:\n\n{deps_msg}"
+                # Ask user if they want to install dependencies
+                reply = QMessageBox.question(
+                    self,
+                    "Install Required Components",
+                    "Chat with Documents requires additional components to be installed.\n\n"
+                    "This is a one-time download (~500MB) and may take a few minutes.\n\n"
+                    "Would you like to install them now?",
+                    QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                    QMessageBox.StandardButton.Yes
                 )
-                return False
+
+                if reply == QMessageBox.StandardButton.No:
+                    return False
+
+                # Show progress dialog
+                from PyQt6.QtWidgets import QProgressDialog
+                progress = QProgressDialog(
+                    "Installing components...",
+                    None,  # No cancel button
+                    0, 0,  # Indeterminate progress
+                    self
+                )
+                progress.setWindowTitle("Installing")
+                progress.setWindowModality(Qt.WindowModality.WindowModal)
+                progress.setMinimumDuration(0)
+                progress.show()
+
+                # Install dependencies
+                def update_progress(msg):
+                    progress.setLabelText(msg)
+                    QApplication.processEvents()
+
+                success, error_msg = install_rag_dependencies(update_progress)
+                progress.close()
+
+                if not success:
+                    QMessageBox.critical(
+                        self,
+                        "Installation Failed",
+                        f"Failed to install components:\n\n{error_msg}\n\n"
+                        "Please check your internet connection and try again."
+                    )
+                    return False
+
+                QMessageBox.information(
+                    self,
+                    "Installation Complete",
+                    "Components installed successfully!\n\n"
+                    "You can now use Chat with Documents."
+                )
 
             self.rag_engine = RAGEngine()
             return True

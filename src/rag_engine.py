@@ -608,9 +608,57 @@ def check_rag_dependencies() -> tuple:
     try:
         from rank_bm25 import BM25Okapi
     except ImportError:
-        pass  # Optional
+        missing.append("rank-bm25")
 
     if missing:
-        return False, f"Missing: {', '.join(missing)}\nInstall with: pip install {' '.join(missing)}"
+        return False, missing
 
-    return True, ""
+    return True, []
+
+
+def install_rag_dependencies(progress_callback=None) -> tuple:
+    """
+    Install RAG dependencies automatically.
+
+    Args:
+        progress_callback: Optional callback function(message: str) for progress updates
+
+    Returns:
+        (success: bool, error_message: str)
+    """
+    import subprocess
+    import sys
+
+    packages = ["sentence-transformers", "chromadb", "rank-bm25"]
+
+    try:
+        for i, package in enumerate(packages):
+            if progress_callback:
+                progress_callback(f"Installing {package}... ({i+1}/{len(packages)})")
+
+            # Use pip to install
+            result = subprocess.run(
+                [sys.executable, "-m", "pip", "install", package, "--quiet"],
+                capture_output=True,
+                text=True,
+                timeout=300  # 5 minute timeout per package
+            )
+
+            if result.returncode != 0:
+                return False, f"Failed to install {package}: {result.stderr}"
+
+        if progress_callback:
+            progress_callback("Installation complete! Restarting feature...")
+
+        # Reload the dependencies
+        global chromadb, SentenceTransformer, BM25Okapi
+        chromadb = None
+        SentenceTransformer = None
+        BM25Okapi = None
+
+        return True, ""
+
+    except subprocess.TimeoutExpired:
+        return False, "Installation timed out. Please check your internet connection."
+    except Exception as e:
+        return False, f"Installation failed: {str(e)}"
