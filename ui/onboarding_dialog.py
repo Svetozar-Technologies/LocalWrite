@@ -216,7 +216,7 @@ class OnboardingDialog(QDialog):
                 "Build a Document Library with multiple files",
                 "Toggle RAG mode to chat about your documents",
                 "AI answers based on your uploaded content",
-                "Great for studying books, papers, or notes"
+                "Components auto-install on first use"
             ]
         )
         self.stack.addWidget(page5)

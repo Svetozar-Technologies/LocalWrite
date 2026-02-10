@@ -25,6 +25,7 @@ Your writing deserves privacy. LocalWrite enhances your text using powerful loca
 - **Chat with Documents** - Ask questions about your uploaded documents using RAG
 - **Document Library** - Store multiple documents and query across all of them
 - **Smart Chunking** - Handles large documents by splitting into manageable pieces
+- **Auto-Install** - Required components install automatically on first use (no technical knowledge needed)
 
 ### AI Chat
 - **Offline ChatGPT** - Private AI assistant for questions and content generation
@@ -80,7 +81,7 @@ Your writing deserves privacy. LocalWrite enhances your text using powerful loca
 - Python 3.9+
 - 8GB RAM minimum (16GB recommended for larger models)
 - 2-6 GB disk space per model
-- Additional ~500MB for RAG embedding model (downloads on first use)
+- Additional ~500MB for Chat with Documents (auto-installs on first use)
 
 ## Privacy Promise
 
@@ -107,7 +108,6 @@ localwrite/
 │   ├── humanizer_v2.py     # Writing enhancement engine
 │   ├── rag_engine.py       # Document RAG system with vector search
 │   ├── paraphraser.py      # Text rewriting with modes
-│   ├── ai_detector.py      # Writing analysis
 │   └── text_analyzer.py    # Statistics and metrics
 ├── resources/              # Stylesheets and assets
 │   ├── styles.qss          # Light theme
