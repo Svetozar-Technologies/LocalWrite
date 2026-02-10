@@ -13,11 +13,26 @@ Your writing deserves privacy. LocalWrite enhances your text using powerful loca
 
 ## Features
 
+### Writing Enhancement
 - **Smart Model Selection** - Choose from 5 curated AI models with recommendations
-- **11 Writing Modes** - Professional, Creative, Conversational, Scholarly, and more
+- **5 Writing Modes** - Professional, Conversational, Scholarly, Creative, Concise
+- **Summarize** - Condense long texts to key points (20-30% of original)
+- **Expand** - Add more examples, practice questions, and details (2-3x expansion)
+- **Refine Output** - Quick refinements or custom instructions to polish results
+
+### Document Support
+- **Document Upload** - Import TXT, Markdown, DOCX, and PDF files
+- **Chat with Documents** - Ask questions about your uploaded documents using RAG
+- **Document Library** - Store multiple documents and query across all of them
+- **Smart Chunking** - Handles large documents by splitting into manageable pieces
+
+### AI Chat
+- **Offline ChatGPT** - Private AI assistant for questions and content generation
+- **RAG Mode** - Toggle between general chat and document-based answers
+- **Context-Aware** - Retrieves relevant passages from your document library
+
+### General
 - **Real-time Statistics** - Word count, reading time, grade level, tone
-- **PDF Enhancement** - Improve documents while preserving layout
-- **Batch Processing** - Enhance multiple files at once
 - **Dark Mode** - Comfortable writing day and night
 - **Export Options** - TXT, Markdown, DOCX
 
@@ -65,6 +80,7 @@ Your writing deserves privacy. LocalWrite enhances your text using powerful loca
 - Python 3.9+
 - 8GB RAM minimum (16GB recommended for larger models)
 - 2-6 GB disk space per model
+- Additional ~500MB for RAG embedding model (downloads on first use)
 
 ## Privacy Promise
 
@@ -89,6 +105,7 @@ localwrite/
 │   ├── model_registry.py   # Curated AI models
 │   ├── model_downloader.py # Auto-download from Hugging Face
 │   ├── humanizer_v2.py     # Writing enhancement engine
+│   ├── rag_engine.py       # Document RAG system with vector search
 │   ├── paraphraser.py      # Text rewriting with modes
 │   ├── ai_detector.py      # Writing analysis
 │   └── text_analyzer.py    # Statistics and metrics
@@ -102,17 +119,17 @@ localwrite/
 
 | Mode | Description |
 |------|-------------|
-| Enhance | Improve overall clarity and flow |
 | Professional | Business and formal tone |
 | Conversational | Friendly, natural language |
 | Scholarly | Academic and research style |
-| Expressive | Creative and storytelling |
+| Creative | Vivid, engaging storytelling |
 | Concise | Shorter, punchier text |
-| Elaborate | More detailed explanations |
-| Smooth | Improved flow and readability |
-| Plain | Simple, easy-to-understand |
-| Precise | Technical accuracy |
-| Standard | Balanced improvements |
+
+### Quick Actions
+| Action | Description |
+|--------|-------------|
+| Summarize | Condense to key points (20-30% of original) |
+| Expand | Add examples and details (2-3x expansion) |
 
 ## Contributing
 

@@ -1,1 +1,1 @@
-# PDF Paraphraser - Core modules
+# LocalWrite - Core modules

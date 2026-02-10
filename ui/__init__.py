@@ -1,1 +1,1 @@
-# PDF Paraphraser - UI modules
+# LocalWrite - UI modules

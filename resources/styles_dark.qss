@@ -2,7 +2,7 @@
 /* Privacy-First AI Writing Assistant */
 
 /* Color Variables Reference:
-   Primary: #818CF8 (Indigo-400)
+   Primary: #A78BFA (Violet-400)
    Success: #34D399 (Emerald-400)
    Warning: #FBBF24 (Amber-400)
    Danger: #F87171 (Red-400)
@@ -34,7 +34,7 @@ QWidget {
 #appTitle {
     font-size: 18px;
     font-weight: 600;
-    color: #818CF8;
+    color: #A78BFA;
 }
 
 /* AI Score Gauge */
@@ -102,8 +102,8 @@ QTabBar::tab {
 }
 
 QTabBar::tab:selected {
-    background-color: #6366F1;
-    border: 1px solid #6366F1;
+    background-color: #8B5CF6;
+    border: 1px solid #8B5CF6;
     border-bottom: none;
     color: #FFFFFF;
     font-weight: 600;
@@ -111,7 +111,7 @@ QTabBar::tab:selected {
 
 QTabBar::tab:hover:!selected {
     background-color: #4B5563;
-    color: #E0E7FF;
+    color: #EDE9FE;
 }
 
 /* Text Areas */
@@ -123,11 +123,11 @@ QPlainTextEdit, QTextEdit {
     font-size: 14px;
     line-height: 1.5;
     color: #F9FAFB;
-    selection-background-color: #4338CA;
+    selection-background-color: #6D28D9;
 }
 
 QPlainTextEdit:focus, QTextEdit:focus {
-    border: 2px solid #818CF8;
+    border: 2px solid #A78BFA;
 }
 
 QPlainTextEdit[readOnly="true"], QTextEdit[readOnly="true"] {
@@ -162,22 +162,22 @@ QPushButton:disabled {
 
 /* Primary Button (Humanize) */
 QPushButton#primaryButton, QPushButton#humanizeButton {
-    background-color: #4F46E5;
+    background-color: #7C3AED;
     color: #FFFFFF;
     border: none;
     font-weight: 600;
 }
 
 QPushButton#primaryButton:hover, QPushButton#humanizeButton:hover {
-    background-color: #6366F1;
+    background-color: #8B5CF6;
 }
 
 QPushButton#primaryButton:pressed, QPushButton#humanizeButton:pressed {
-    background-color: #4338CA;
+    background-color: #6D28D9;
 }
 
 QPushButton#primaryButton:disabled, QPushButton#humanizeButton:disabled {
-    background-color: #312E81;
+    background-color: #4C1D95;
     color: #6B7280;
 }
 
@@ -235,7 +235,7 @@ QProgressBar {
 }
 
 QProgressBar::chunk {
-    background-color: #818CF8;
+    background-color: #A78BFA;
     border-radius: 4px;
 }
 
@@ -254,7 +254,7 @@ QComboBox:hover {
 }
 
 QComboBox:focus {
-    border: 2px solid #818CF8;
+    border: 2px solid #A78BFA;
 }
 
 QComboBox::drop-down {
@@ -275,7 +275,7 @@ QComboBox QAbstractItemView {
     border-radius: 8px;
     background-color: #1F2937;
     color: #F9FAFB;
-    selection-background-color: #4338CA;
+    selection-background-color: #6D28D9;
     selection-color: #F9FAFB;
 }
 
@@ -289,7 +289,7 @@ QSpinBox, QDoubleSpinBox {
 }
 
 QSpinBox:focus, QDoubleSpinBox:focus {
-    border: 2px solid #818CF8;
+    border: 2px solid #A78BFA;
 }
 
 /* Slider */
@@ -301,7 +301,7 @@ QSlider::groove:horizontal {
 }
 
 QSlider::handle:horizontal {
-    background-color: #818CF8;
+    background-color: #A78BFA;
     border: 2px solid #1F2937;
     width: 18px;
     height: 18px;
@@ -310,11 +310,11 @@ QSlider::handle:horizontal {
 }
 
 QSlider::handle:horizontal:hover {
-    background-color: #A5B4FC;
+    background-color: #C4B5FD;
 }
 
 QSlider::sub-page:horizontal {
-    background-color: #818CF8;
+    background-color: #A78BFA;
     border-radius: 3px;
 }
 
@@ -443,7 +443,7 @@ QMenu::item {
 }
 
 QMenu::item:selected {
-    background-color: #4338CA;
+    background-color: #6D28D9;
     color: #F9FAFB;
 }
 
@@ -466,8 +466,8 @@ QToolTip {
 }
 
 #dropZone:hover {
-    border-color: #818CF8;
-    background-color: #312E81;
+    border-color: #A78BFA;
+    background-color: #4C1D95;
 }
 
 /* Splitter */
@@ -478,7 +478,7 @@ QSplitter::handle {
 }
 
 QSplitter::handle:hover {
-    background-color: #818CF8;
+    background-color: #A78BFA;
 }
 
 /* Dialog */
@@ -496,7 +496,7 @@ QLineEdit {
 }
 
 QLineEdit:focus {
-    border: 2px solid #818CF8;
+    border: 2px solid #A78BFA;
 }
 
 /* Check Box */
@@ -514,12 +514,12 @@ QCheckBox::indicator {
 }
 
 QCheckBox::indicator:checked {
-    background-color: #818CF8;
-    border-color: #818CF8;
+    background-color: #A78BFA;
+    border-color: #A78BFA;
 }
 
 QCheckBox::indicator:hover {
-    border-color: #818CF8;
+    border-color: #A78BFA;
 }
 
 /* Radio Button */
@@ -537,12 +537,12 @@ QRadioButton::indicator {
 }
 
 QRadioButton::indicator:checked {
-    background-color: #818CF8;
-    border-color: #818CF8;
+    background-color: #A78BFA;
+    border-color: #A78BFA;
 }
 
 QRadioButton::indicator:hover {
-    border-color: #818CF8;
+    border-color: #A78BFA;
 }
 
 /* Message Box */

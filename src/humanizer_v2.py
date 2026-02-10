@@ -45,112 +45,330 @@ class HumanizerV2Config:
     target_perplexity: float = 0.65  # Higher = more human-like variation
 
 
-# ============= ENHANCED PROMPTS =============
-# These prompts are carefully crafted to produce human-like output
+# ============= MODE-SPECIFIC PROMPTS =============
+# Each mode has its own transformation prompts
 
-FIRST_PASS_PROMPTS = [
-    """Transform this into authentic human writing. Critical rules:
+MODE_PROMPTS = {
+    "professional": {
+        "first_pass": [
+            """Rewrite this text in professional, business-appropriate language.
+
+CRITICAL RULES:
+- Keep ALL original information - do NOT remove or skip any content
+- Do NOT add new information or sentences that weren't in the original
+- Only change the STYLE, not the MEANING or CONTENT
 
 VOICE & STYLE:
-- Write like explaining to a colleague, not presenting
-- Use "you" and "we" naturally, add occasional "I think" or "honestly"
-- Contractions mandatory: don't, won't, it's, that's, you're, they're
-- Start 2-3 sentences with And, But, So, Or, Plus, Also
-
-STRUCTURE:
-- Mix sentence lengths: some 5-8 words, others 20-25 words
-- One-sentence paragraphs occasionally for emphasis
-- Questions sometimes instead of statements
+- Use formal, polished language suitable for business communication
+- "Hi" → "Hello"
+- "Hey" → "Hello"
+- "Thanks" → "Thank you"
+- "gonna" → "going to"
+- "wanna" → "want to"
+- "What's up" → "How may I help you" or "What can I do for you"
 
 VOCABULARY:
-- Simple words: use/utilize, get/obtain, show/demonstrate, help/assist
-- Casual insertions: basically, pretty much, kind of, actually, honestly
+- Professional but clear vocabulary
+- Avoid slang and colloquialisms
+- Use complete words, no contractions in formal contexts
 
-BANNED (AI tells):
-- Words: crucial, comprehensive, utilize, facilitate, leverage, subsequently, furthermore, moreover, nevertheless, paramount, pivotal, delve, multifaceted, intricate
-- Phrases: "it's important to note", "it's worth mentioning", "plays a crucial role", "in today's world", "at the end of the day"
-- Punctuation: semicolons, em-dashes, colons before lists
+IMPORTANT:
+- Same number of sentences as input
+- Same information, just more professional wording
+- Do NOT add extra pleasantries or filler
 
-Output ONLY the rewritten text:""",
+Output ONLY the professional rewrite, nothing else:""",
+        ],
+        "second_pass": [
+            """Review and refine this text for professional polish:
 
-    """Rewrite as if you're a knowledgeable blogger having a conversation.
-
-MUST DO:
-- Contractions everywhere (it's, don't, won't, that's, you're)
-- Personal asides: "honestly", "to be fair", "the thing is", "here's the deal"
-- Mix punchy short sentences with flowing longer ones
-- Start some sentences with conjunctions (And, But, So)
-- Use rhetorical questions occasionally
-- Sound like you're sharing, not lecturing
-
-NEVER USE:
-- Formal transitions (furthermore, moreover, consequently, nevertheless)
-- Corporate speak (leverage, optimize, facilitate, implement, utilize)
-- Perfect parallel structure throughout
-- Semicolons or em-dashes
-- "In order to" (just use "to")
-- "Due to the fact that" (just use "because")
-
-Just output the natural rewrite:""",
-
-    """Make this sound genuinely human-written. Think Reddit comment or Medium post.
-
-PERSONALITY:
-- Opinionated but informed
-- Uses contractions heavily
-- Occasionally informal (kind of, pretty much, basically, literally)
-- Mixes short punchy points with longer explanations
-- Starts sentences with And/But/So naturally
-
-STRUCTURAL VARIETY:
-- Some very short sentences. Like this.
-- Some longer flowing sentences that develop an idea more fully.
-- Occasional fragments for effect
-- Questions to engage reader
-
-AVOID AT ALL COSTS:
-- "It is important/crucial/essential to note/understand"
-- "Furthermore", "Moreover", "Additionally", "Subsequently"
-- "Comprehensive", "Multifaceted", "Pivotal", "Paramount"
-- Semicolons, em-dashes
-- Perfect grammar throughout (occasional casual phrasing OK)
-
-Rewritten version only:""",
-]
-
-SECOND_PASS_PROMPTS = [
-    """Review and refine this text to sound even more natural:
+RULES:
+- Do NOT add any new content
+- Do NOT remove any existing content
+- Only refine the professional tone
 
 CHECK & FIX:
-- Replace any remaining formal words with casual ones
+- Ensure formal language is consistent throughout
+- Verify professional vocabulary usage
+- Maintain clear, business-appropriate tone
+
+Output the refined professional text:""",
+        ]
+    },
+
+    "conversational": {
+        "first_pass": [
+            """Rewrite this text in casual, friendly language like talking to a friend.
+
+CRITICAL RULES:
+- Keep ALL original information - do NOT remove or skip any content
+- Do NOT add new information, questions, or sentences that weren't in the original
+- Only change the STYLE, not the MEANING or CONTENT
+
+VOICE & STYLE:
+- Use contractions: don't, won't, it's, that's, you're, I'm
+- Simple everyday words
+- "Hello" → "Hey" or "Hi"
+- "I am" → "I'm"
+- "What is" → "What's"
+
+VOCABULARY:
+- Keep it simple and casual
+- "obtain" → "get"
+- "assist" → "help"
+- "utilize" → "use"
+
+IMPORTANT:
+- Same number of sentences as input
+- Same information, just more casual wording
+- Do NOT add greetings, questions, or filler that wasn't there
+
+Output ONLY the casual rewrite, nothing else:""",
+        ],
+        "second_pass": [
+            """Polish this to sound like natural conversation:
+
+RULES:
+- Do NOT add any new content
+- Do NOT remove any existing content
+- Only refine the casual tone
+
+CHECK & FIX:
 - Ensure contractions are used consistently
-- Verify sentence variety (short + long mix)
-- Add a personal touch if missing ("honestly", "the thing is")
-- Remove any AI-sounding phrases that slipped through
+- Keep the friendly, approachable tone
+- Remove any stiff or formal phrasing
 
-KEEP:
-- The core meaning and all facts
-- Any good casual phrasing already present
-- Natural sentence flow
+Output the refined conversational text:""",
+        ]
+    },
 
-Just output the refined text:""",
+    "scholarly": {
+        "first_pass": [
+            """Rewrite this text in academic, scholarly language.
 
-    """Polish this to be indistinguishable from human writing:
+CRITICAL RULES:
+- Keep ALL original information - do NOT remove or skip any content
+- Do NOT add new information or sentences that weren't in the original
+- Only change the STYLE, not the MEANING or CONTENT
 
-VERIFY:
-- No formal transition words (furthermore, moreover, etc.)
-- Contractions used throughout
-- Mix of sentence lengths
-- Casual tone maintained
-- No AI-tell phrases
+VOICE & STYLE:
+- Use formal academic tone
+- "use" → "utilize" or "employ"
+- "show" → "demonstrate" or "indicate"
+- "think" → "posit" or "suggest"
+- "a lot" → "numerous" or "substantial"
+- "big" → "significant" or "considerable"
 
-ENHANCE:
-- Add one casual aside if none exist
-- Ensure at least one sentence starts with And/But/So
-- Keep it sounding natural and conversational
+VOCABULARY:
+- Academic vocabulary where appropriate
+- Precise terminology
+- Formal expressions
 
-Output the final polished version:""",
-]
+IMPORTANT:
+- Same number of sentences as input
+- Same information, just more academic wording
+- Do NOT add citations or references that weren't there
+
+Output ONLY the scholarly rewrite, nothing else:""",
+        ],
+        "second_pass": [
+            """Review and refine this text for academic standards:
+
+RULES:
+- Do NOT add any new content
+- Do NOT remove any existing content
+- Only refine the academic tone
+
+CHECK & FIX:
+- Ensure academic vocabulary is consistent
+- Verify formal tone throughout
+- Maintain scholarly precision
+
+Output the refined academic text:""",
+        ]
+    },
+
+    "creative": {
+        "first_pass": [
+            """Rewrite this text with vivid, engaging storytelling language.
+
+CRITICAL RULES:
+- Keep ALL original information - do NOT remove or skip any content
+- Do NOT add new plot points, characters, or events that weren't in the original
+- Only enhance the STYLE and EXPRESSIVENESS, not the core CONTENT
+
+VOICE & STYLE:
+- Use evocative, descriptive language
+- Employ sensory details and imagery
+- Use metaphors and similes where appropriate
+- Vary rhythm and pacing for effect
+
+VOCABULARY:
+- Rich, expressive words
+- Active, dynamic verbs
+- Fresh expressions instead of clichés
+
+IMPORTANT:
+- Preserve the original meaning and information
+- Enhance expressiveness without changing facts
+- Do NOT invent new details
+
+Output ONLY the creative rewrite, nothing else:""",
+        ],
+        "second_pass": [
+            """Polish this for maximum creative impact:
+
+RULES:
+- Do NOT add any new content or events
+- Do NOT remove any existing content
+- Only enhance the creative expression
+
+CHECK & FIX:
+- Enhance vivid imagery
+- Strengthen sensory details
+- Refine rhythm and flow
+
+Output the refined creative text:""",
+        ]
+    },
+
+    "concise": {
+        "first_pass": [
+            """Make this text shorter and punchier by removing filler and redundancy.
+
+CRITICAL RULES:
+- Keep ALL essential information and meaning
+- Do NOT remove important facts or details
+- Only remove filler words, redundancy, and unnecessary phrases
+
+WHAT TO CUT:
+- Filler words: very, really, just, actually, basically, quite
+- Wordy phrases: "In order to" → "To", "Due to the fact that" → "Because"
+- Redundant information (saying the same thing twice)
+- Unnecessary adjectives and adverbs
+
+WHAT TO KEEP:
+- All key facts and information
+- Core meaning and intent
+- Clarity and readability
+
+TARGET:
+- Make it shorter but complete
+- Every word should be purposeful
+- Direct and clear
+
+Output ONLY the concise rewrite, nothing else:""",
+        ],
+        "second_pass": [
+            """Review and tighten this text further:
+
+RULES:
+- Do NOT remove essential information
+- Only cut remaining filler and redundancy
+- Maintain complete meaning
+
+CHECK & FIX:
+- Remove any remaining filler words
+- Ensure maximum clarity with minimum words
+- Verify all key information is preserved
+
+Output the final concise text:""",
+        ]
+    },
+
+    "summarize": {
+        "first_pass": [
+            """Create a concise summary of this text.
+
+YOUR TASK:
+- Condense to 20-30% of original length
+- Extract ONLY the core message and key points
+- Remove all examples, details, and elaboration
+- Write in clear, direct sentences
+
+STRUCTURE:
+- Start with the main point/thesis
+- Include only essential supporting facts
+- Skip all non-critical information
+- End with any key conclusion
+
+IMPORTANT:
+- Be ruthlessly concise
+- Every sentence must convey essential information
+- No filler words or redundancy
+- Preserve the original meaning accurately
+
+Output ONLY the condensed summary:""",
+        ],
+        "second_pass": [
+            """Make this summary even more concise:
+
+GOAL: Reduce further while keeping ALL essential meaning
+
+RULES:
+- Cut any remaining fluff
+- Merge similar points
+- Use shorter phrases where possible
+- Keep critical information intact
+
+Output the tightened summary:""",
+        ]
+    },
+
+    "expand": {
+        "first_pass": [
+            """Expand this content by adding MORE SIMILAR examples and practice items.
+
+YOUR TASK:
+Analyze what type of content this is and expand accordingly:
+
+IF IT'S HOMEWORK/EXERCISES/QUESTIONS:
+- Add 3-5 MORE questions of the SAME type and difficulty
+- Match the exact format, style, and complexity
+- Cover the same topic/concept with different scenarios
+- Keep the same level of challenge
+
+IF IT'S EDUCATIONAL/EXPLANATORY:
+- Add more examples illustrating the same concepts
+- Include practice problems or exercises
+- Add related scenarios or case studies
+- Expand each point with concrete illustrations
+
+IF IT'S A LIST OR OUTLINE:
+- Add more items following the same pattern
+- Maintain the same level of detail per item
+- Keep the same format and structure
+
+CRITICAL:
+- Match the DIFFICULTY level exactly
+- Match the FORMAT exactly
+- Stay on the SAME topic
+- Add 2-3x more content of the same type
+
+Output the expanded content with additional similar items:""",
+        ],
+        "second_pass": [
+            """Review and enhance this expanded content:
+
+CHECK:
+- Are new items at the SAME difficulty level?
+- Do they follow the SAME format?
+- Are they on the SAME topic?
+- Is the expansion substantial (2-3x original)?
+
+IMPROVE:
+- Add more variety in the examples
+- Ensure consistent quality throughout
+- Remove any items that don't match the original style
+
+Output the refined expanded content:""",
+        ]
+    }
+}
+
+# Default prompts for backward compatibility (conversational style)
+FIRST_PASS_PROMPTS = MODE_PROMPTS["conversational"]["first_pass"]
+SECOND_PASS_PROMPTS = MODE_PROMPTS["conversational"]["second_pass"]
 
 
 # ============= COMPREHENSIVE AI PATTERNS =============
@@ -397,13 +615,31 @@ RHETORICAL_QUESTIONS = [
 class HumanizerV2:
     """
     Enhanced humanizer with professional-grade AI detection bypass.
+    Supports multiple writing styles: professional, conversational, scholarly, creative, concise.
     """
+
+    # Token estimation: ~4 chars per token, leave room for prompt (~2000 tokens)
+    # For 8192 context, safe text limit is about 6000 tokens = 24000 chars
+    MAX_CHUNK_CHARS = 20000  # Conservative limit for text chunks
+    CHARS_PER_TOKEN = 4  # Rough estimate
 
     def __init__(self, config: Optional[HumanizerV2Config] = None):
         self.config = config or HumanizerV2Config()
         self.model: Optional[Llama] = None
         self.is_loaded = False
         self._creativity_level = self.config.creativity_level
+        self._current_style = "conversational"  # Default style
+
+    @property
+    def current_style(self) -> str:
+        return self._current_style
+
+    def set_style(self, style: str):
+        """Set the writing style for transformation."""
+        if style.lower() in MODE_PROMPTS:
+            self._current_style = style.lower()
+        else:
+            self._current_style = "conversational"
 
     @property
     def creativity_level(self) -> int:
@@ -421,6 +657,72 @@ class HumanizerV2:
     def get_substitution_rate(self) -> float:
         """How aggressively to substitute words."""
         return 0.5 + (self._creativity_level / 100) * 0.5
+
+    def _estimate_tokens(self, text: str) -> int:
+        """Estimate token count for text."""
+        return len(text) // self.CHARS_PER_TOKEN
+
+    def _split_into_chunks(self, text: str, max_chars: int = None) -> List[str]:
+        """
+        Split text into chunks that fit within context window.
+        Respects paragraph boundaries where possible.
+        """
+        max_chars = max_chars or self.MAX_CHUNK_CHARS
+
+        if len(text) <= max_chars:
+            return [text]
+
+        chunks = []
+        paragraphs = self._split_paragraphs(text)
+        current_chunk = []
+        current_length = 0
+
+        for para in paragraphs:
+            para_len = len(para)
+
+            # If single paragraph is too long, split it by sentences
+            if para_len > max_chars:
+                # Flush current chunk first
+                if current_chunk:
+                    chunks.append("\n\n".join(current_chunk))
+                    current_chunk = []
+                    current_length = 0
+
+                # Split long paragraph by sentences
+                sentences = self._split_sentences(para)
+                sent_chunk = []
+                sent_length = 0
+
+                for sent in sentences:
+                    sent_len = len(sent)
+                    if sent_length + sent_len + 1 > max_chars:
+                        if sent_chunk:
+                            chunks.append(" ".join(sent_chunk))
+                        sent_chunk = [sent]
+                        sent_length = sent_len
+                    else:
+                        sent_chunk.append(sent)
+                        sent_length += sent_len + 1
+
+                if sent_chunk:
+                    chunks.append(" ".join(sent_chunk))
+
+            # Normal paragraph handling
+            elif current_length + para_len + 2 > max_chars:
+                # Flush current chunk
+                if current_chunk:
+                    chunks.append("\n\n".join(current_chunk))
+                current_chunk = [para]
+                current_length = para_len
+            else:
+                current_chunk.append(para)
+                current_length += para_len + 2
+
+        # Don't forget the last chunk
+        if current_chunk:
+            chunks.append("\n\n".join(current_chunk))
+
+        return chunks
 
     def load_model(self, model_path: Optional[str] = None,
                    progress_callback: Optional[Callable[[str], None]] = None) -> bool:
@@ -509,30 +811,46 @@ class HumanizerV2:
                 progress_callback(f"Stage {3+stage_offset}/{total_stages}: Removing AI patterns...")
             result = self._remove_ai_patterns(result)
 
-            # Stage 4: Word substitutions
-            if progress_callback:
-                progress_callback(f"Stage {4+stage_offset}/{total_stages}: Casualizing vocabulary...")
-            result = self._substitute_words(result)
+            # Stage 4: Word substitutions (only casualize for conversational/creative modes)
+            if self._current_style in ["conversational", "creative", "concise"]:
+                if progress_callback:
+                    progress_callback(f"Stage {4+stage_offset}/{total_stages}: Casualizing vocabulary...")
+                result = self._substitute_words(result)
+            else:
+                if progress_callback:
+                    progress_callback(f"Stage {4+stage_offset}/{total_stages}: Maintaining vocabulary...")
 
-            # Stage 5: Apply contractions
-            if progress_callback:
-                progress_callback(f"Stage {5+stage_offset}/{total_stages}: Adding contractions...")
-            result = self._apply_contractions(result)
+            # Stage 5: Apply contractions (only for conversational/creative modes)
+            if self._current_style in ["conversational", "creative", "concise"]:
+                if progress_callback:
+                    progress_callback(f"Stage {5+stage_offset}/{total_stages}: Adding contractions...")
+                result = self._apply_contractions(result)
+            else:
+                if progress_callback:
+                    progress_callback(f"Stage {5+stage_offset}/{total_stages}: Maintaining formal style...")
 
-            # Stage 6: Inject perplexity variation
-            if progress_callback:
-                progress_callback(f"Stage {6+stage_offset}/{total_stages}: Adding natural variation...")
-            result = self._inject_perplexity(result)
+            # Stage 6: Inject perplexity variation (skip for professional/scholarly)
+            if self._current_style in ["conversational", "creative"]:
+                if progress_callback:
+                    progress_callback(f"Stage {6+stage_offset}/{total_stages}: Adding natural variation...")
+                result = self._inject_perplexity(result)
+            else:
+                if progress_callback:
+                    progress_callback(f"Stage {6+stage_offset}/{total_stages}: Preserving style...")
 
-            # Stage 7: Restructure sentences
+            # Stage 7: Restructure sentences (skip casual starters for professional/scholarly)
             if progress_callback:
                 progress_callback(f"Stage {7+stage_offset}/{total_stages}: Restructuring sentences...")
             result = self._restructure_sentences(result)
 
-            # Stage 8: Add human touches
-            if progress_callback:
-                progress_callback(f"Stage {8+stage_offset}/{total_stages}: Adding human touches...")
-            result = self._add_human_touches(result)
+            # Stage 8: Add human touches (only for conversational/creative modes)
+            if self._current_style in ["conversational", "creative"]:
+                if progress_callback:
+                    progress_callback(f"Stage {8+stage_offset}/{total_stages}: Adding human touches...")
+                result = self._add_human_touches(result)
+            else:
+                if progress_callback:
+                    progress_callback(f"Stage {8+stage_offset}/{total_stages}: Finalizing style...")
 
             # Final cleanup
             if progress_callback:
@@ -547,7 +865,9 @@ class HumanizerV2:
             return text
 
     def _first_pass_rewrite(self, text: str) -> str:
-        """First LLM pass for major rewriting."""
+        """First LLM pass for major rewriting using style-specific prompts.
+        Handles large texts by processing in manageable chunks.
+        """
         paragraphs = self._split_paragraphs(text)
         rewritten = []
 
@@ -556,44 +876,112 @@ class HumanizerV2:
                 rewritten.append(para)
                 continue
 
-            prompt_template = random.choice(FIRST_PASS_PROMPTS)
-            prompt = f"""<|im_start|>system
+            # Check if paragraph is too long - if so, split and process
+            if len(para) > self.MAX_CHUNK_CHARS:
+                chunks = self._split_into_chunks(para)
+                para_parts = []
+                for chunk in chunks:
+                    result = self._rewrite_single_paragraph(chunk)
+                    para_parts.append(result)
+                rewritten.append(" ".join(para_parts))
+            else:
+                result = self._rewrite_single_paragraph(para)
+                rewritten.append(result)
+
+        return "\n\n".join(rewritten)
+
+    def _rewrite_single_paragraph(self, para: str) -> str:
+        """Rewrite a single paragraph with LLM."""
+        # Get style-specific prompts
+        style_prompts = MODE_PROMPTS.get(self._current_style, MODE_PROMPTS["conversational"])
+        prompt_template = random.choice(style_prompts["first_pass"])
+        prompt = f"""<|im_start|>system
 {prompt_template}<|im_end|>
 <|im_start|>user
 {para}<|im_end|>
 <|im_start|>assistant
 """
 
-            temp = self.get_effective_temperature() + random.uniform(-0.08, 0.12)
+        temp = self.get_effective_temperature() + random.uniform(-0.08, 0.12)
 
-            response = self.model(
-                prompt,
-                max_tokens=min(len(para.split()) * 3, self.config.max_tokens),
-                temperature=temp,
-                top_p=self.config.top_p,
-                top_k=self.config.top_k,
-                repeat_penalty=self.config.repeat_penalty,
-                stop=["<|im_end|>", "<|im_start|>"],
-                echo=False
-            )
+        # Calculate safe max tokens based on mode
+        available_tokens = self.config.n_ctx - self._estimate_tokens(prompt) - 100
+        word_count = len(para.split())
 
-            result = response["choices"][0]["text"].strip()
-            result = self._clean_llm_output(result)
+        # Adjust token multiplier based on mode
+        if self._current_style == "summarize":
+            # Summarize: output should be 25-40% of input
+            token_multiplier = 0.5
+            min_tokens = 128
+        elif self._current_style == "expand":
+            # Expand: output should be 2-3x input
+            token_multiplier = 4
+            min_tokens = 512
+        elif self._current_style == "concise":
+            # Concise: output should be shorter
+            token_multiplier = 1.0
+            min_tokens = 128
+        else:
+            # Other modes: roughly same length
+            token_multiplier = 2
+            min_tokens = 256
 
-            if result and len(result.split()) >= len(para.split()) * 0.4:
-                rewritten.append(result)
-            else:
-                rewritten.append(para)
+        max_tokens = min(int(word_count * token_multiplier), self.config.max_tokens, available_tokens)
+        max_tokens = max(min_tokens, max_tokens)
 
-        return "\n\n".join(rewritten)
+        response = self.model(
+            prompt,
+            max_tokens=max_tokens,
+            temperature=temp,
+            top_p=self.config.top_p,
+            top_k=self.config.top_k,
+            repeat_penalty=self.config.repeat_penalty,
+            stop=["<|im_end|>", "<|im_start|>"],
+            echo=False
+        )
+
+        result = response["choices"][0]["text"].strip()
+        result = self._clean_llm_output(result)
+
+        # Adjust validation threshold based on mode
+        if self._current_style == "summarize":
+            min_ratio = 0.15  # Summarize can be much shorter
+        elif self._current_style == "concise":
+            min_ratio = 0.3
+        else:
+            min_ratio = 0.4
+
+        if result and len(result.split()) >= word_count * min_ratio:
+            return result
+        return para
 
     def _second_pass_refine(self, text: str) -> str:
-        """Second LLM pass for refinement."""
+        """Second LLM pass for refinement using style-specific prompts.
+        Uses chunked processing for large texts to avoid context window overflow.
+        """
         # Only refine if text is long enough
         if len(text.split()) < 30:
             return text
 
-        prompt_template = random.choice(SECOND_PASS_PROMPTS)
+        # Check if text needs chunking
+        chunks = self._split_into_chunks(text)
+
+        if len(chunks) == 1:
+            # Single chunk - process normally
+            return self._refine_single_chunk(text)
+        else:
+            # Multiple chunks - process each and combine
+            refined_chunks = []
+            for chunk in chunks:
+                refined = self._refine_single_chunk(chunk)
+                refined_chunks.append(refined)
+            return "\n\n".join(refined_chunks)
+
+    def _refine_single_chunk(self, text: str) -> str:
+        """Refine a single chunk of text."""
+        # Get style-specific prompts
+        style_prompts = MODE_PROMPTS.get(self._current_style, MODE_PROMPTS["conversational"])
+        prompt_template = random.choice(style_prompts["second_pass"])
         prompt = f"""<|im_start|>system
 {prompt_template}<|im_end|>
 <|im_start|>user
@@ -601,9 +989,30 @@ class HumanizerV2:
 <|im_start|>assistant
 """
 
+        # Limit max tokens based on available context and mode
+        available_tokens = self.config.n_ctx - self._estimate_tokens(prompt) - 100
+        word_count = len(text.split())
+
+        # Adjust token multiplier based on mode
+        if self._current_style == "summarize":
+            token_multiplier = 0.4  # Further condense in second pass
+            min_tokens = 128
+        elif self._current_style == "expand":
+            token_multiplier = 3
+            min_tokens = 512
+        elif self._current_style == "concise":
+            token_multiplier = 0.8
+            min_tokens = 128
+        else:
+            token_multiplier = 1.5
+            min_tokens = 256
+
+        max_tokens = min(int(word_count * token_multiplier), self.config.max_tokens, available_tokens)
+        max_tokens = max(min_tokens, max_tokens)
+
         response = self.model(
             prompt,
-            max_tokens=min(len(text.split()) * 2, self.config.max_tokens),
+            max_tokens=max_tokens,
             temperature=0.7,  # Lower temp for refinement
             top_p=0.9,
             repeat_penalty=1.1,
@@ -614,8 +1023,15 @@ class HumanizerV2:
         result = response["choices"][0]["text"].strip()
         result = self._clean_llm_output(result)
 
-        # Validate
-        if result and len(result.split()) >= len(text.split()) * 0.5:
+        # Adjust validation threshold based on mode
+        if self._current_style == "summarize":
+            min_ratio = 0.1  # Summary can be very condensed
+        elif self._current_style == "concise":
+            min_ratio = 0.3
+        else:
+            min_ratio = 0.5
+
+        if result and len(result.split()) >= word_count * min_ratio:
             return result
         return text
 
@@ -797,11 +1213,12 @@ class HumanizerV2:
                         sentences[i + 1] = ""  # Mark as processed
                         continue
 
-            # Add casual starter (15% chance, not first sentence)
-            if i > 0 and word_count > 5 and random.random() < 0.15:
-                if not any(sentence.startswith(s) for s in CASUAL_STARTERS + SENTENCE_CONNECTORS):
-                    starter = random.choice(SENTENCE_CONNECTORS)
-                    sentence = starter + sentence[0].lower() + sentence[1:]
+            # Add casual starter (15% chance, not first sentence) - only for conversational/creative
+            if self._current_style in ["conversational", "creative"]:
+                if i > 0 and word_count > 5 and random.random() < 0.15:
+                    if not any(sentence.startswith(s) for s in CASUAL_STARTERS + SENTENCE_CONNECTORS):
+                        starter = random.choice(SENTENCE_CONNECTORS)
+                        sentence = starter + sentence[0].lower() + sentence[1:]
 
             result_sentences.append(sentence)
 

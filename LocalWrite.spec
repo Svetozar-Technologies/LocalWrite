@@ -14,6 +14,9 @@ import sys
 import site
 from pathlib import Path
 
+# PyInstaller utilities for collecting package data
+from PyInstaller.utils.hooks import collect_data_files, collect_submodules
+
 block_cipher = None
 
 # Get the current directory
@@ -60,12 +63,28 @@ def find_pyqt6_plugins():
 
 pyqt6_plugins = find_pyqt6_plugins()
 
+# Collect data files for ML packages
+try:
+    sentence_transformers_datas = collect_data_files('sentence_transformers')
+except Exception:
+    sentence_transformers_datas = []
+
+try:
+    chromadb_datas = collect_data_files('chromadb')
+except Exception:
+    chromadb_datas = []
+
+try:
+    tokenizers_datas = collect_data_files('tokenizers')
+except Exception:
+    tokenizers_datas = []
+
 # Collect data files
 datas = [
     (str(ROOT / 'resources'), 'resources'),
     (str(ROOT / 'src'), 'src'),
     (str(ROOT / 'ui'), 'ui'),
-] + pyqt6_plugins
+] + pyqt6_plugins + sentence_transformers_datas + chromadb_datas + tokenizers_datas
 
 # Hidden imports for Qt and ML libraries
 hiddenimports = [
@@ -88,24 +107,42 @@ hiddenimports = [
     'src.export_manager',
     'src.history_manager',
     'src.diff_viewer',
+    'src.rag_engine',
 
     # UI modules
     'ui',
     'ui.main_window',
     'ui.model_selector',
     'ui.onboarding_dialog',
-    'ui.batch_dialog',
     'ui.history_dialog',
 
     # llama-cpp-python
     'llama_cpp',
 
-    # PDF processing
-    'PyPDF2',
-    'fitz',  # PyMuPDF
-
     # DOCX export
     'docx',
+
+    # PDF support
+    'fitz',
+    'pymupdf',
+
+    # RAG dependencies
+    'sentence_transformers',
+    'chromadb',
+    'rank_bm25',
+
+    # Sentence transformers dependencies
+    'torch',
+    'tqdm',
+    'huggingface_hub',
+    'tokenizers',
+    'safetensors',
+
+    # ChromaDB dependencies
+    'sqlite3',
+    'onnxruntime',
+    'posthog',
+    'opentelemetry',
 
     # Requests for model download
     'requests',
@@ -138,12 +175,9 @@ excludes = [
     'PySide6',
     'PySide2',
 
-    # Exclude large ML libraries not needed
-    'torch',
+    # Exclude ML libraries not needed (we use sentence-transformers, not full transformers)
     'tensorflow',
     'keras',
-    'transformers',
-    'onnx',
 ]
 
 a = Analysis(
@@ -212,7 +246,7 @@ app = BUNDLE(
         'NSRequiresAquaSystemAppearance': False,  # Support dark mode
         'LSMinimumSystemVersion': '11.0',  # macOS Big Sur+
 
-        # Document types (text and PDF files)
+        # Document types (text files and documents)
         'CFBundleDocumentTypes': [
             {
                 'CFBundleTypeName': 'Text File',
@@ -224,6 +258,12 @@ app = BUNDLE(
                 'CFBundleTypeName': 'PDF Document',
                 'CFBundleTypeExtensions': ['pdf'],
                 'CFBundleTypeRole': 'Viewer',
+                'LSHandlerRank': 'Alternate',
+            },
+            {
+                'CFBundleTypeName': 'Word Document',
+                'CFBundleTypeExtensions': ['docx'],
+                'CFBundleTypeRole': 'Editor',
                 'LSHandlerRank': 'Alternate',
             },
         ],

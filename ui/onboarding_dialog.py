@@ -192,35 +192,51 @@ class OnboardingDialog(QDialog):
         # Page 4: Writing Enhancement
         page4 = OnboardingPage(
             title="Enhance Your Writing",
-            description="11 writing modes to improve any text.",
+            description="5 writing modes plus quick actions.",
             icon_text="",
             tips=[
                 "Professional - Business and formal documents",
                 "Conversational - Friendly, natural tone",
                 "Scholarly - Academic and research writing",
-                "Expressive - Creative and storytelling",
+                "Creative - Vivid, engaging storytelling",
                 "Concise - Shorter, punchier text",
-                "Elaborate - More detailed explanations"
+                "Summarize button - Condense to key points",
+                "Expand button - Add examples and details"
             ]
         )
         self.stack.addWidget(page4)
 
-        # Page 5: Keyboard Shortcuts
+        # Page 5: Document Features
         page5 = OnboardingPage(
+            title="Chat with Your Documents",
+            description="Upload documents and ask questions about them.",
+            icon_text="",
+            tips=[
+                "Upload TXT, Markdown, DOCX, or PDF files",
+                "Build a Document Library with multiple files",
+                "Toggle RAG mode to chat about your documents",
+                "AI answers based on your uploaded content",
+                "Great for studying books, papers, or notes"
+            ]
+        )
+        self.stack.addWidget(page5)
+
+        # Page 6: Keyboard Shortcuts
+        page6 = OnboardingPage(
             title="Keyboard Shortcuts",
             description="Work faster with these shortcuts.",
             icon_text="",
             tips=[
                 "Cmd+Enter: Enhance text",
                 "Cmd+Shift+C: Copy output",
-                "Cmd+O: Open PDF file",
+                "Enter: Send chat message",
                 "View > Dark Mode: Toggle theme"
             ]
         )
-        self.stack.addWidget(page5)
+        self.stack.addWidget(page6)
 
-        # Page 6: Get Started
-        page6 = OnboardingPage(
+        # Page 7: Get Started
+        page7 = OnboardingPage(
             title="Start Writing Privately",
             description="You're all set! Here's how to begin:",
             icon_text="",
@@ -228,10 +244,11 @@ class OnboardingDialog(QDialog):
                 "1. Select an AI model from the dropdown",
                 "2. Paste or type your text in the input area",
                 "3. Choose your preferred writing mode",
-                "4. Click 'Enhance Writing' and enjoy!"
+                "4. Click 'Enhance Writing' and enjoy!",
+                "5. Try AI Chat to ask questions or upload documents"
             ]
         )
-        self.stack.addWidget(page6)
+        self.stack.addWidget(page7)
 
     def _update_indicators(self):
         """Update page indicator dots."""
@@ -239,7 +256,7 @@ class OnboardingDialog(QDialog):
         for i, indicator in enumerate(self.indicators):
             if i == current:
                 indicator.setStyleSheet("""
-                    background-color: #4F46E5;
+                    background-color: #7C3AED;
                     border-radius: 4px;
                 """)
             else:

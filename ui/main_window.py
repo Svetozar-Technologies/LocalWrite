@@ -20,11 +20,9 @@ from PyQt6.QtGui import (
     QShortcut, QTextCursor, QTextCharFormat, QColor
 )
 
-from src.pdf_processor import PDFProcessor, extract_text_for_preview
 from src.paraphraser import Paraphraser, ParaphraserConfig
 from src.humanizer_v2 import HumanizerV2, HumanizerV2Config
-from src.workers import ModelLoaderWorker, FullProcessWorker
-from src.ai_detector import AIDetector, AIDetectorWorker, TextAnalysisResult
+from src.workers import ModelLoaderWorker
 from src.text_analyzer import TextAnalyzer, get_stats, get_readability, get_tone
 from src.settings_manager import get_settings_manager, save_settings
 from src.history_manager import get_history_manager, add_to_history
@@ -51,12 +49,47 @@ class RefineWorker(QThread):
     progress = pyqtSignal(str)
     finished = pyqtSignal(bool, str)
 
+    # Context window settings
+    MAX_CONTEXT = 8192  # Most models have 8k context
+    CHARS_PER_TOKEN = 4
+    MAX_CHUNK_CHARS = 20000
+
     def __init__(self, model, text: str, instruction: str):
         super().__init__()
         self.model = model
         self.text = text
         self.instruction = instruction
         self._cancelled = False
+
+    def _estimate_tokens(self, text: str) -> int:
+        """Estimate token count."""
+        return len(text) // self.CHARS_PER_TOKEN
+
+    def _split_into_chunks(self, text: str) -> list:
+        """Split text into manageable chunks."""
+        if len(text) <= self.MAX_CHUNK_CHARS:
+            return [text]
+
+        chunks = []
+        paragraphs = text.split('\n\n')
+        current_chunk = []
+        current_length = 0
+
+        for para in paragraphs:
+            para_len = len(para)
+            if current_length + para_len + 2 > self.MAX_CHUNK_CHARS:
+                if current_chunk:
+                    chunks.append('\n\n'.join(current_chunk))
+                current_chunk = [para]
+                current_length = para_len
+            else:
+                current_chunk.append(para)
+                current_length += para_len + 2
+
+        if current_chunk:
+            chunks.append('\n\n'.join(current_chunk))
+
+        return chunks
 
     def run(self):
         try:
@@ -66,33 +99,24 @@ class RefineWorker(QThread):
 
             self.progress.emit("Refining based on your feedback...")
 
-            # Build refinement prompt
-            prompt = f"""<|im_start|>system
-You are a helpful writing assistant. The user wants you to modify the text based on their specific instruction.
-Apply ONLY the requested change. Keep everything else the same.
-Do not add unnecessary changes or explanations.
-Output the refined text only.<|im_end|>
-<|im_start|>user
-Here is the current text:
----
-{self.text}
----
+            # Check if text needs chunking
+            chunks = self._split_into_chunks(self.text)
 
-Please make this change: {self.instruction}<|im_end|>
-<|im_start|>assistant
-"""
-
-            response = self.model(
-                prompt,
-                max_tokens=4096,
-                temperature=0.7,
-                top_p=0.9,
-                repeat_penalty=1.1,
-                stop=["<|im_end|>", "<|im_start|>"],
-                echo=False
-            )
-
-            result = response["choices"][0]["text"].strip()
+            if len(chunks) == 1:
+                # Single chunk - process normally
+                result = self._refine_chunk(self.text)
+            else:
+                # Multiple chunks - process each
+                self.progress.emit(f"Refining {len(chunks)} sections...")
+                refined_chunks = []
+                for i, chunk in enumerate(chunks):
+                    if self._cancelled:
+                        self.finished.emit(False, "")
+                        return
+                    self.progress.emit(f"Refining section {i+1}/{len(chunks)}...")
+                    refined = self._refine_chunk(chunk)
+                    refined_chunks.append(refined)
+                result = '\n\n'.join(refined_chunks)
 
             if self._cancelled:
                 self.finished.emit(False, "")
@@ -101,6 +125,41 @@ Please make this change: {self.instruction}<|im_end|>
 
         except Exception as e:
             self.finished.emit(False, f"Error: {str(e)}")
+
+    def _refine_chunk(self, text: str) -> str:
+        """Refine a single chunk of text."""
+        # Build refinement prompt
+        prompt = f"""<|im_start|>system
+You are a helpful writing assistant. The user wants you to modify the text based on their specific instruction.
+Apply ONLY the requested change. Keep everything else the same.
+Do not add unnecessary changes or explanations.
+Output the refined text only.<|im_end|>
+<|im_start|>user
+Here is the current text:
+---
+{text}
+---
+
+Please make this change: {self.instruction}<|im_end|>
+<|im_start|>assistant
+"""
+
+        # Calculate safe max tokens
+        prompt_tokens = self._estimate_tokens(prompt)
+        available_tokens = self.MAX_CONTEXT - prompt_tokens - 100
+        max_tokens = max(256, min(available_tokens, 4096))
+
+        response = self.model(
+            prompt,
+            max_tokens=max_tokens,
+            temperature=0.7,
+            top_p=0.9,
+            repeat_penalty=1.1,
+            stop=["<|im_end|>", "<|im_start|>"],
+            echo=False
+        )
+
+        return response["choices"][0]["text"].strip()
 
     def cancel(self):
         self._cancelled = True
@@ -179,144 +238,6 @@ class TextHumanizeWorker(QThread):
 
     def cancel(self):
         self._cancelled = True
-
-
-class DropZone(QFrame):
-    """Drag & drop zone for PDF files."""
-
-    def __init__(self, parent=None):
-        super().__init__(parent)
-        self.setObjectName("dropZone")
-        self.setAcceptDrops(True)
-        self.setMinimumHeight(120)
-
-        layout = QVBoxLayout(self)
-        layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
-
-        self.label = QLabel("Drop PDF here or click to browse")
-        self.label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.label.setObjectName("helperText")
-        layout.addWidget(self.label)
-
-        self.file_label = QLabel("")
-        self.file_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.file_label.setObjectName("sectionTitle")
-        layout.addWidget(self.file_label)
-
-        self.parent_window = parent
-
-    def dragEnterEvent(self, event: QDragEnterEvent):
-        if event.mimeData().hasUrls():
-            urls = event.mimeData().urls()
-            if urls and urls[0].toLocalFile().lower().endswith('.pdf'):
-                event.acceptProposedAction()
-
-    def dragLeaveEvent(self, event):
-        pass
-
-    def dropEvent(self, event: QDropEvent):
-        urls = event.mimeData().urls()
-        if urls:
-            file_path = urls[0].toLocalFile()
-            if file_path.lower().endswith('.pdf'):
-                if self.parent_window:
-                    self.parent_window.load_pdf(file_path)
-
-    def mousePressEvent(self, event):
-        if self.parent_window:
-            self.parent_window.browse_pdf()
-
-    def set_file(self, filename: str):
-        self.file_label.setText(filename)
-        if filename:
-            self.label.setText("PDF Loaded")
-        else:
-            self.label.setText("Drop PDF here or click to browse")
-
-
-class StyleScoreWidget(QFrame):
-    """Widget displaying writing style naturalness score."""
-
-    def __init__(self, parent=None):
-        super().__init__(parent)
-        self.setObjectName("styleScoreWidget")
-
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(16, 12, 16, 12)
-        layout.setSpacing(8)
-
-        # Title
-        title = QLabel("Style Analysis")
-        title.setStyleSheet("font-weight: 600; font-size: 14px; color: #374151;")
-        title.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        layout.addWidget(title)
-
-        # Score label
-        self.score_label = QLabel("--")
-        self.score_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.score_label.setStyleSheet("font-size: 32px; font-weight: 700; color: #6B7280;")
-        layout.addWidget(self.score_label)
-
-        # Status label
-        self.status_label = QLabel("Click 'Style Check' to analyze")
-        self.status_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.status_label.setStyleSheet("color: #6B7280; font-size: 12px;")
-        self.status_label.setWordWrap(True)
-        layout.addWidget(self.status_label)
-
-        # Progress bar as visual gauge
-        self.gauge = QProgressBar()
-        self.gauge.setMaximum(100)
-        self.gauge.setValue(0)
-        self.gauge.setTextVisible(False)
-        self.gauge.setFixedHeight(8)
-        self.gauge.setStyleSheet("""
-            QProgressBar {
-                background-color: #E5E7EB;
-                border-radius: 4px;
-            }
-        """)
-        layout.addWidget(self.gauge)
-
-        # Disclaimer
-        disclaimer = QLabel("Approximate analysis only")
-        disclaimer.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        disclaimer.setStyleSheet("color: #9CA3AF; font-size: 10px; font-style: italic;")
-        layout.addWidget(disclaimer)
-
-        self.setStyleSheet("""
-            #styleScoreWidget {
-                background-color: #F9FAFB;
-                border: 1px solid #E5E7EB;
-                border-radius: 12px;
-            }
-        """)
-        self.setFixedWidth(200)
-
-    def set_score(self, score: float, status: str = None):
-        score_int = int(100 - score)  # Invert: higher = more natural
-        self.score_label.setText(f"{score_int}%")
-        self.gauge.setValue(score_int)
-
-        if score_int >= 70:
-            self.score_label.setStyleSheet("font-size: 32px; font-weight: 700; color: #10B981;")
-            self.gauge.setStyleSheet("QProgressBar { background-color: #E5E7EB; border-radius: 4px; } QProgressBar::chunk { background-color: #10B981; border-radius: 4px; }")
-            self.status_label.setText(status or "Natural writing style")
-        elif score_int >= 40:
-            self.score_label.setStyleSheet("font-size: 32px; font-weight: 700; color: #F59E0B;")
-            self.gauge.setStyleSheet("QProgressBar { background-color: #E5E7EB; border-radius: 4px; } QProgressBar::chunk { background-color: #F59E0B; border-radius: 4px; }")
-            self.status_label.setText(status or "Mixed style detected")
-        else:
-            self.score_label.setStyleSheet("font-size: 32px; font-weight: 700; color: #EF4444;")
-            self.gauge.setStyleSheet("QProgressBar { background-color: #E5E7EB; border-radius: 4px; } QProgressBar::chunk { background-color: #EF4444; border-radius: 4px; }")
-            self.status_label.setText(status or "May need more refinement")
-
-    def reset(self):
-        self.score_label.setText("--")
-        self.score_label.setStyleSheet("font-size: 32px; font-weight: 700; color: #6B7280;")
-        self.status_label.setText("Click 'Style Check' to analyze")
-        self.gauge.setValue(0)
-        self.gauge.setStyleSheet("QProgressBar { background-color: #E5E7EB; border-radius: 4px; }")
 
 
 class StatsPanel(QFrame):
@@ -409,15 +330,9 @@ class MainWindow(QMainWindow):
         # Initialize components
         self.paraphraser = Paraphraser()
         self.humanizer = HumanizerV2()
-        self.pdf_processor = PDFProcessor()
-        self.ai_detector = AIDetector()
         self.text_analyzer = TextAnalyzer()
-
-        self.current_pdf_path = ""
-        self.current_worker = None
         self.model_worker = None
         self.text_worker = None
-        self.ai_worker = None
         self.refine_worker = None
         self.chat_worker = None
         self.model_loaded = False
@@ -440,10 +355,6 @@ class MainWindow(QMainWindow):
         # Export manager
         self.export_manager = get_export_manager()
 
-        # AI scores for history
-        self.ai_score_before = None
-        self.ai_score_after = None
-
         # Setup UI
         self._setup_menubar()
         self._setup_ui()
@@ -465,10 +376,10 @@ class MainWindow(QMainWindow):
         # File menu
         file_menu = menubar.addMenu("File")
 
-        open_action = QAction("Open PDF...", self)
-        open_action.setShortcut(QKeySequence.StandardKey.Open)
-        open_action.triggered.connect(self.browse_pdf)
-        file_menu.addAction(open_action)
+        open_doc_action = QAction("Open Document...", self)
+        open_doc_action.setShortcut(QKeySequence("Ctrl+O"))
+        open_doc_action.triggered.connect(self._upload_document)
+        file_menu.addAction(open_doc_action)
 
         file_menu.addSeparator()
 
@@ -491,12 +402,6 @@ class MainWindow(QMainWindow):
         export_comparison = QAction("Export Comparison...", self)
         export_comparison.triggered.connect(self._export_comparison)
         export_menu.addAction(export_comparison)
-
-        file_menu.addSeparator()
-
-        batch_action = QAction("Batch Processing...", self)
-        batch_action.triggered.connect(self._show_batch_dialog)
-        file_menu.addAction(batch_action)
 
         file_menu.addSeparator()
 
@@ -550,11 +455,6 @@ class MainWindow(QMainWindow):
         # Tools menu
         tools_menu = menubar.addMenu("Tools")
 
-        check_ai_action = QAction("Check AI Score", self)
-        check_ai_action.setShortcut(QKeySequence("Ctrl+D"))
-        check_ai_action.triggered.connect(self._check_ai_score)
-        tools_menu.addAction(check_ai_action)
-
         load_custom_action = QAction("Load Custom Model...", self)
         load_custom_action.triggered.connect(self.browse_model)
         tools_menu.addAction(load_custom_action)
@@ -583,16 +483,13 @@ class MainWindow(QMainWindow):
         header = self._create_header()
         main_layout.addWidget(header)
 
-        # Tab widget for Text, Chat, and PDF modes
+        # Tab widget for Text and Chat modes
         self.tab_widget = QTabWidget()
         text_tab = self._create_text_tab()
         self.tab_widget.addTab(text_tab, "Writing Assistant")
 
         chat_tab = self._create_chat_tab()
         self.tab_widget.addTab(chat_tab, "AI Chat")
-
-        pdf_tab = self._create_pdf_tab()
-        self.tab_widget.addTab(pdf_tab, "PDF Enhancer")
 
         # Connect tab change to update UI
         self.tab_widget.currentChanged.connect(self._on_tab_changed)
@@ -681,7 +578,7 @@ class MainWindow(QMainWindow):
                 font-size: 16px;
             }
             QPushButton:hover {
-                color: #4F46E5;
+                color: #7C3AED;
             }
         """)
         layout.addWidget(self.mode_info_btn)
@@ -725,6 +622,28 @@ class MainWindow(QMainWindow):
         self.input_word_count = QLabel("0 words")
         self.input_word_count.setObjectName("wordCount")
         input_header.addWidget(self.input_word_count)
+
+        # Upload document button
+        self.upload_btn = QPushButton("Upload")
+        self.upload_btn.setFixedSize(80, 32)
+        self.upload_btn.clicked.connect(self._upload_document)
+        self.upload_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #3B82F6;
+                color: white;
+                border: none;
+                border-radius: 6px;
+                font-weight: 600;
+                font-size: 13px;
+            }
+            QPushButton:hover {
+                background-color: #2563EB;
+            }
+            QPushButton:pressed {
+                background-color: #1D4ED8;
+            }
+        """)
+        input_header.addWidget(self.upload_btn)
 
         self.clear_input_btn = QPushButton("Clear")
         self.clear_input_btn.setFixedSize(70, 32)
@@ -873,7 +792,7 @@ class MainWindow(QMainWindow):
                 font-size: 13px;
             }
             QPlainTextEdit:focus {
-                border: 2px solid #4F46E5;
+                border: 2px solid #7C3AED;
             }
         """)
         custom_layout.addWidget(self.refine_input)
@@ -897,28 +816,6 @@ class MainWindow(QMainWindow):
         # Button row
         btn_layout = QHBoxLayout()
         btn_layout.addStretch()
-
-        self.check_ai_btn = QPushButton("Style Check")
-        self.check_ai_btn.setFixedSize(120, 45)
-        self.check_ai_btn.setToolTip("Approximate style analysis - checks how natural the writing sounds")
-        self.check_ai_btn.clicked.connect(self._check_ai_score)
-        self.check_ai_btn.setStyleSheet("""
-            QPushButton {
-                background-color: #6366F1;
-                color: white;
-                border: none;
-                border-radius: 8px;
-                font-weight: 600;
-                font-size: 14px;
-            }
-            QPushButton:hover {
-                background-color: #4F46E5;
-            }
-            QPushButton:pressed {
-                background-color: #4338CA;
-            }
-        """)
-        btn_layout.addWidget(self.check_ai_btn)
 
         self.humanize_btn = QPushButton("Enhance Writing")
         self.humanize_btn.setFixedSize(160, 45)
@@ -945,6 +842,58 @@ class MainWindow(QMainWindow):
         """)
         btn_layout.addWidget(self.humanize_btn)
 
+        # Summarize button
+        self.summarize_btn = QPushButton("Summarize")
+        self.summarize_btn.setFixedSize(120, 45)
+        self.summarize_btn.clicked.connect(self._summarize_text)
+        self.summarize_btn.setEnabled(False)
+        self.summarize_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #7C3AED;
+                color: white;
+                border: none;
+                border-radius: 8px;
+                font-weight: 600;
+                font-size: 14px;
+            }
+            QPushButton:hover {
+                background-color: #6D28D9;
+            }
+            QPushButton:pressed {
+                background-color: #5B21B6;
+            }
+            QPushButton:disabled {
+                background-color: #9CA3AF;
+            }
+        """)
+        btn_layout.addWidget(self.summarize_btn)
+
+        # Expand button
+        self.expand_btn = QPushButton("Expand")
+        self.expand_btn.setFixedSize(120, 45)
+        self.expand_btn.clicked.connect(self._expand_text)
+        self.expand_btn.setEnabled(False)
+        self.expand_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #F59E0B;
+                color: white;
+                border: none;
+                border-radius: 8px;
+                font-weight: 600;
+                font-size: 14px;
+            }
+            QPushButton:hover {
+                background-color: #D97706;
+            }
+            QPushButton:pressed {
+                background-color: #B45309;
+            }
+            QPushButton:disabled {
+                background-color: #9CA3AF;
+            }
+        """)
+        btn_layout.addWidget(self.expand_btn)
+
         self.cancel_text_btn = QPushButton("Cancel")
         self.cancel_text_btn.setFixedSize(100, 45)
         self.cancel_text_btn.clicked.connect(self._cancel_text_humanize)
@@ -965,10 +914,6 @@ class MainWindow(QMainWindow):
         btn_layout.addWidget(self.cancel_text_btn)
 
         btn_layout.addStretch()
-
-        # Style Score Widget (appears after analysis)
-        self.style_score_widget = StyleScoreWidget()
-        btn_layout.addWidget(self.style_score_widget)
 
         layout.addLayout(btn_layout)
 
@@ -992,17 +937,153 @@ class MainWindow(QMainWindow):
         header_layout.addWidget(chat_desc)
         layout.addLayout(header_layout)
 
+        # Document Library Panel (collapsible)
+        self.doc_library_frame = QFrame()
+        self.doc_library_frame.setStyleSheet("""
+            QFrame#docLibrary {
+                background-color: #F5F3FF;
+                border: 1px solid #DDD6FE;
+                border-radius: 8px;
+            }
+        """)
+        self.doc_library_frame.setObjectName("docLibrary")
+        doc_lib_layout = QVBoxLayout(self.doc_library_frame)
+        doc_lib_layout.setContentsMargins(12, 8, 12, 8)
+        doc_lib_layout.setSpacing(8)
+
+        # Library header with toggle
+        lib_header = QHBoxLayout()
+        lib_header.setSpacing(8)
+
+        self.doc_lib_toggle = QPushButton("📚 Document Library")
+        self.doc_lib_toggle.setCheckable(True)
+        self.doc_lib_toggle.setChecked(False)
+        self.doc_lib_toggle.clicked.connect(self._toggle_doc_library)
+        self.doc_lib_toggle.setStyleSheet("""
+            QPushButton {
+                background-color: transparent;
+                border: none;
+                color: #5B21B6;
+                font-weight: 600;
+                font-size: 13px;
+                text-align: left;
+                padding: 4px 8px;
+            }
+            QPushButton:hover {
+                color: #7C3AED;
+            }
+        """)
+        lib_header.addWidget(self.doc_lib_toggle)
+
+        self.doc_count_label = QLabel("0 documents")
+        self.doc_count_label.setStyleSheet("color: #9CA3AF; font-size: 12px;")
+        lib_header.addWidget(self.doc_count_label)
+
+        lib_header.addStretch()
+
+        # RAG toggle button
+        self.rag_toggle_btn = QPushButton("🔍 RAG: OFF")
+        self.rag_toggle_btn.setCheckable(True)
+        self.rag_toggle_btn.setChecked(False)
+        self.rag_toggle_btn.clicked.connect(self._toggle_rag_mode)
+        self.rag_toggle_btn.setToolTip("Toggle document search mode.\nON: AI answers from your documents\nOFF: Regular AI chat")
+        self.rag_toggle_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #E5E7EB;
+                color: #6B7280;
+                border: none;
+                border-radius: 4px;
+                padding: 4px 10px;
+                font-weight: 600;
+                font-size: 11px;
+            }
+            QPushButton:checked {
+                background-color: #10B981;
+                color: white;
+            }
+            QPushButton:hover {
+                background-color: #D1D5DB;
+            }
+            QPushButton:checked:hover {
+                background-color: #059669;
+            }
+        """)
+        lib_header.addWidget(self.rag_toggle_btn)
+
+        self.add_doc_btn = QPushButton("+ Add")
+        self.add_doc_btn.setFixedHeight(28)
+        self.add_doc_btn.clicked.connect(self._add_document_to_library)
+        self.add_doc_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #7C3AED;
+                color: white;
+                border: none;
+                border-radius: 4px;
+                padding: 4px 12px;
+                font-weight: 600;
+                font-size: 12px;
+            }
+            QPushButton:hover {
+                background-color: #6D28D9;
+            }
+        """)
+        lib_header.addWidget(self.add_doc_btn)
+
+        self.clear_all_docs_btn = QPushButton("Clear All")
+        self.clear_all_docs_btn.setFixedHeight(28)
+        self.clear_all_docs_btn.clicked.connect(self._clear_all_documents)
+        self.clear_all_docs_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #FEE2E2;
+                color: #DC2626;
+                border: none;
+                border-radius: 4px;
+                padding: 4px 10px;
+                font-weight: 600;
+                font-size: 12px;
+            }
+            QPushButton:hover {
+                background-color: #EF4444;
+                color: white;
+            }
+        """)
+        lib_header.addWidget(self.clear_all_docs_btn)
+
+        doc_lib_layout.addLayout(lib_header)
+
+        # Document list (hidden by default)
+        self.doc_list_widget = QFrame()
+        self.doc_list_widget.setStyleSheet("background-color: white; border-radius: 6px; border: 1px solid #E5E7EB;")
+        self.doc_list_layout = QVBoxLayout(self.doc_list_widget)
+        self.doc_list_layout.setContentsMargins(8, 8, 8, 8)
+        self.doc_list_layout.setSpacing(4)
+
+        # Placeholder for empty state
+        self.doc_list_empty = QLabel("No documents added yet.\nClick '+ Add' to upload PDFs, Word docs, or text files.")
+        self.doc_list_empty.setStyleSheet("color: #9CA3AF; font-size: 12px; padding: 16px;")
+        self.doc_list_empty.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.doc_list_layout.addWidget(self.doc_list_empty)
+
+        self.doc_list_widget.hide()  # Hidden by default
+        doc_lib_layout.addWidget(self.doc_list_widget)
+
+        layout.addWidget(self.doc_library_frame)
+
+        # Initialize RAG engine (lazy loaded)
+        self.rag_engine = None
+        self.rag_enabled = False
+
         # Chat history display
         self.chat_history = QTextEdit()
         self.chat_history.setReadOnly(True)
         self.chat_history.setPlaceholderText(
-            "Chat with the AI assistant...\n\n"
-            "Examples:\n"
-            "• Write a Python function for Fourier transform\n"
-            "• Explain quantum computing in simple terms\n"
-            "• Create a story about space exploration\n"
-            "• Help me debug this code\n"
-            "• Summarize this article"
+            "💬 AI Chat - Two Modes Available:\n\n"
+            "📚 RAG Mode (Document Q&A):\n"
+            "   Add documents above, then ask questions about them.\n"
+            "   AI will only answer from your documents.\n\n"
+            "💭 Regular Mode:\n"
+            "   Chat freely - write code, explain concepts, get help.\n\n"
+            "Toggle RAG on/off using the button above."
         )
         self.chat_history.setStyleSheet("""
             QTextEdit {
@@ -1030,7 +1111,7 @@ class MainWindow(QMainWindow):
         input_layout.setSpacing(8)
 
         self.chat_input = QPlainTextEdit()
-        self.chat_input.setPlaceholderText("Type your message here... (Ctrl+Enter to send)")
+        self.chat_input.setPlaceholderText("Type your message here... (Enter to send, Shift+Enter for new line)")
         self.chat_input.setMaximumHeight(100)
         self.chat_input.setStyleSheet("""
             QPlainTextEdit {
@@ -1041,7 +1122,7 @@ class MainWindow(QMainWindow):
                 font-size: 14px;
             }
             QPlainTextEdit:focus {
-                border: 2px solid #4F46E5;
+                border: 2px solid #7C3AED;
             }
         """)
         # Install event filter for Ctrl+Enter shortcut
@@ -1053,7 +1134,7 @@ class MainWindow(QMainWindow):
         self.send_btn.clicked.connect(self._send_chat_message)
         self.send_btn.setStyleSheet("""
             QPushButton {
-                background-color: #4F46E5;
+                background-color: #7C3AED;
                 color: white;
                 border: none;
                 border-radius: 8px;
@@ -1061,10 +1142,10 @@ class MainWindow(QMainWindow):
                 font-size: 14px;
             }
             QPushButton:hover {
-                background-color: #4338CA;
+                background-color: #6D28D9;
             }
             QPushButton:pressed {
-                background-color: #3730A3;
+                background-color: #5B21B6;
             }
             QPushButton:disabled {
                 background-color: #9CA3AF;
@@ -1110,7 +1191,7 @@ class MainWindow(QMainWindow):
                 padding: 4px 8px;
             }
             QPushButton:hover {
-                color: #4F46E5;
+                color: #7C3AED;
             }
             QPushButton:disabled {
                 color: #D1D5DB;
@@ -1128,115 +1209,11 @@ class MainWindow(QMainWindow):
 
         return tab
 
-    def _create_pdf_tab(self) -> QWidget:
-        """Create the PDF paraphraser tab."""
-        tab = QWidget()
-        layout = QVBoxLayout(tab)
-        layout.setSpacing(12)
-
-        # Settings row
-        settings_row = QHBoxLayout()
-        settings_row.addWidget(QLabel("Min words per block:"))
-        self.min_words_spin = QSpinBox()
-        self.min_words_spin.setRange(1, 50)
-        self.min_words_spin.setValue(3)
-        settings_row.addWidget(self.min_words_spin)
-        settings_row.addStretch()
-        layout.addLayout(settings_row)
-
-        # Content splitter
-        splitter = QSplitter(Qt.Orientation.Horizontal)
-
-        # Left: Drop zone and controls
-        left_widget = QWidget()
-        left_layout = QVBoxLayout(left_widget)
-        left_layout.setContentsMargins(0, 0, 8, 0)
-        left_layout.setSpacing(12)
-
-        # Drop zone label
-        drop_label = QLabel("Load PDF")
-        drop_label.setObjectName("sectionTitle")
-        left_layout.addWidget(drop_label)
-
-        self.drop_zone = DropZone(self)
-        self.drop_zone.setMinimumHeight(200)  # Ensure decent height
-        left_layout.addWidget(self.drop_zone, 1)  # Give it stretch
-
-        self.process_btn = QPushButton("Process PDF")
-        self.process_btn.setObjectName("processButton")
-        self.process_btn.setFixedHeight(45)
-        self.process_btn.clicked.connect(self._process_pdf)
-        self.process_btn.setEnabled(False)
-        self.process_btn.setStyleSheet("""
-            QPushButton {
-                background-color: #4F46E5;
-                color: white;
-                border: none;
-                border-radius: 8px;
-                font-weight: 600;
-                font-size: 14px;
-            }
-            QPushButton:hover {
-                background-color: #4338CA;
-            }
-            QPushButton:disabled {
-                background-color: #9CA3AF;
-            }
-        """)
-        left_layout.addWidget(self.process_btn)
-
-        self.cancel_pdf_btn = QPushButton("Cancel")
-        self.cancel_pdf_btn.setObjectName("cancelButton")
-        self.cancel_pdf_btn.setFixedHeight(45)
-        self.cancel_pdf_btn.clicked.connect(self._cancel_processing)
-        self.cancel_pdf_btn.hide()
-        self.cancel_pdf_btn.setStyleSheet("""
-            QPushButton {
-                background-color: #EF4444;
-                color: white;
-                border: none;
-                border-radius: 8px;
-                font-weight: 600;
-                font-size: 14px;
-            }
-            QPushButton:hover {
-                background-color: #DC2626;
-            }
-        """)
-        left_layout.addWidget(self.cancel_pdf_btn)
-
-        splitter.addWidget(left_widget)
-
-        # Right: Preview
-        right_widget = QWidget()
-        right_layout = QVBoxLayout(right_widget)
-        right_layout.setContentsMargins(8, 0, 0, 0)
-
-        preview_label = QLabel("PDF Preview")
-        preview_label.setObjectName("sectionTitle")
-        right_layout.addWidget(preview_label)
-
-        self.preview_text = QTextEdit()
-        self.preview_text.setPlaceholderText("PDF content preview will appear here...")
-        self.preview_text.setReadOnly(True)
-        right_layout.addWidget(self.preview_text)
-
-        splitter.addWidget(right_widget)
-        splitter.setSizes([350, 450])  # More balanced layout
-
-        layout.addWidget(splitter, 1)
-
-        return tab
-
     def _setup_shortcuts(self):
         """Setup keyboard shortcuts."""
         # Humanize shortcut
         humanize_shortcut = QShortcut(QKeySequence("Ctrl+Return"), self)
         humanize_shortcut.activated.connect(self._humanize_text)
-
-        # Check AI shortcut
-        ai_shortcut = QShortcut(QKeySequence("Ctrl+D"), self)
-        ai_shortcut.activated.connect(self._check_ai_score)
 
         # Copy shortcut
         copy_shortcut = QShortcut(QKeySequence("Ctrl+Shift+C"), self)
@@ -1311,7 +1288,7 @@ class MainWindow(QMainWindow):
 
     def _on_tab_changed(self, index: int):
         """Handle tab change - show/hide relevant UI elements."""
-        # Tab indices: 0=Writing Assistant, 1=AI Chat, 2=PDF Enhancer
+        # Tab indices: 0=Writing Assistant, 1=AI Chat
         is_chat_tab = (index == 1)
 
         # Hide stats panel for AI Chat (not relevant)
@@ -1351,19 +1328,18 @@ class MainWindow(QMainWindow):
         # Debounce stats update
         self.stats_timer.start(300)
 
-        # Reset AI score on input change
-        self.style_score_widget.reset()
-
     def _update_stats_delayed(self):
         """Update stats after debounce."""
         text = self.input_text.toPlainText()
         self.stats_panel.update_stats(text)
 
     def _update_humanize_button(self):
-        """Update humanize button enabled state."""
+        """Update humanize/summarize/expand button enabled state."""
         has_text = bool(self.input_text.toPlainText().strip())
-        # Enable button if there's text (will show message if model not loaded)
+        # Enable buttons if there's text (will show message if model not loaded)
         self.humanize_btn.setEnabled(has_text)
+        self.summarize_btn.setEnabled(has_text)
+        self.expand_btn.setEnabled(has_text)
 
     def _clear_input(self):
         """Clear input text."""
@@ -1373,8 +1349,81 @@ class MainWindow(QMainWindow):
         """Clear all text areas."""
         self.input_text.clear()
         self.output_text.clear()
-        self.style_score_widget.reset()
         self.copy_btn.setEnabled(False)
+
+    def _upload_document(self):
+        """Upload and read a document file."""
+        from PyQt6.QtWidgets import QFileDialog
+
+        file_path, _ = QFileDialog.getOpenFileName(
+            self,
+            "Open Document",
+            "",
+            "Documents (*.txt *.md *.docx *.pdf);;PDF Files (*.pdf);;Text Files (*.txt);;Markdown (*.md);;Word Documents (*.docx);;All Files (*)"
+        )
+
+        if not file_path:
+            return
+
+        try:
+            content = self._read_document(file_path)
+            if content:
+                self.input_text.setPlainText(content)
+                word_count = len(content.split())
+                self.statusbar.showMessage(f"Loaded: {file_path.split('/')[-1]} ({word_count} words)", 3000)
+            else:
+                QMessageBox.warning(self, "Empty Document", "The document appears to be empty.")
+        except Exception as e:
+            QMessageBox.critical(self, "Error Reading Document", f"Could not read the document:\n{str(e)}")
+
+    def _read_document(self, file_path: str) -> str:
+        """Read content from various document formats."""
+        import os
+
+        ext = os.path.splitext(file_path)[1].lower()
+
+        if ext in ['.txt', '.md']:
+            # Plain text files
+            with open(file_path, 'r', encoding='utf-8') as f:
+                return f.read()
+
+        elif ext == '.docx':
+            # Word documents
+            try:
+                from docx import Document
+                doc = Document(file_path)
+                paragraphs = [para.text for para in doc.paragraphs if para.text.strip()]
+                return '\n\n'.join(paragraphs)
+            except ImportError:
+                QMessageBox.warning(
+                    self, "Missing Dependency",
+                    "python-docx is required to read Word documents.\n\n"
+                    "Install it with: pip install python-docx"
+                )
+                return ""
+
+        elif ext == '.pdf':
+            # PDF files
+            try:
+                import fitz  # PyMuPDF
+                doc = fitz.open(file_path)
+                text_parts = []
+                for page in doc:
+                    text_parts.append(page.get_text())
+                doc.close()
+                return '\n\n'.join(text_parts)
+            except ImportError:
+                QMessageBox.warning(
+                    self, "Missing Dependency",
+                    "PyMuPDF is required to read PDF files.\n\n"
+                    "Install it with: pip install PyMuPDF"
+                )
+                return ""
+
+        else:
+            # Try reading as plain text
+            with open(file_path, 'r', encoding='utf-8') as f:
+                return f.read()
 
     def _copy_output(self):
         """Copy output text to clipboard."""
@@ -1414,10 +1463,48 @@ class MainWindow(QMainWindow):
         self.stage_label.setText("AI is thinking...")
         self.progress_bar.setRange(0, 0)
 
+        # Build the actual prompt - include RAG context if documents are loaded and RAG is enabled
+        prompt_message = message
+        using_rag = False
+
+        if self.rag_enabled and self.rag_engine is not None and not self.rag_engine.is_empty:
+            try:
+                # Retrieve relevant context using RAG
+                self.stage_label.setText("🔍 Searching documents...")
+                context = self.rag_engine.get_context_for_query(message, max_tokens=2500)
+
+                if context:
+                    using_rag = True
+                    prompt_message = f"""You are a helpful assistant answering questions ONLY based on the provided document excerpts.
+
+STRICT RULES:
+1. ONLY use information from the excerpts below - do NOT use any other knowledge
+2. If the answer is NOT in the excerpts, respond: "I couldn't find this information in your documents."
+3. NEVER make up or infer information not explicitly stated in the excerpts
+4. Quote or reference specific parts of the documents when answering
+5. If asked about something outside the documents, politely redirect to what's in the documents
+
+DOCUMENT EXCERPTS:
+---
+{context}
+---
+
+USER QUESTION: {message}
+
+Remember: Only answer from the excerpts above. Do not hallucinate or add external knowledge."""
+
+            except Exception as e:
+                # Fall back to regular chat if RAG fails
+                self.statusbar.showMessage(f"RAG search failed: {str(e)}", 3000)
+
+        # Update status to show mode
+        if using_rag:
+            self.stage_label.setText("📚 Answering from documents...")
+
         # Start chat worker with conversation history for context
         self.chat_worker = ChatWorker(
             self.paraphraser,
-            message,
+            prompt_message,
             self.conversation_history.copy()  # Pass copy of history
         )
         self.chat_worker.progress.connect(lambda msg: self.stage_label.setText(msg))
@@ -1460,8 +1547,8 @@ class MainWindow(QMainWindow):
 
         if sender == "You":
             formatted = f'''
-            <div style="margin: 12px 0; padding: 12px; background-color: #E0E7FF; border-radius: 8px;">
-                <b style="color: #4F46E5;">You:</b><br>
+            <div style="margin: 12px 0; padding: 12px; background-color: #EDE9FE; border-radius: 8px;">
+                <b style="color: #7C3AED;">You:</b><br>
                 <span style="color: #1F2937;">{self._escape_html(message)}</span>
             </div>
             '''
@@ -1469,9 +1556,9 @@ class MainWindow(QMainWindow):
             # Format AI response with code block detection
             formatted_message = self._format_ai_message(message)
             formatted = f'''
-            <div style="margin: 12px 0; padding: 12px; background-color: #F0FDF4; border-radius: 8px;">
+            <div style="margin: 12px 0; padding: 12px; background-color: #F9FAFB; border-radius: 8px;">
                 <b style="color: #10B981;">AI:</b><br>
-                <span style="color: #1F2937;">{formatted_message}</span>
+                <div style="color: #1F2937;">{formatted_message}</div>
             </div>
             '''
 
@@ -1481,23 +1568,55 @@ class MainWindow(QMainWindow):
         scrollbar = self.chat_history.verticalScrollBar()
         scrollbar.setValue(scrollbar.maximum())
 
+    def _escape_html(self, text: str) -> str:
+        """Escape HTML special characters to prevent injection."""
+        import html
+        return html.escape(text)
+
     def _format_ai_message(self, message: str) -> str:
         """Format AI message with code block styling."""
         import re
 
-        # Escape HTML first
-        message = self._escape_html(message)
-
-        # Convert code blocks (```language\ncode\n```)
-        def replace_code_block(match):
+        # First, extract and preserve code blocks before escaping
+        code_blocks = []
+        def save_code_block(match):
             lang = match.group(1) or ""
             code = match.group(2)
-            return f'''<div style="background-color: #1F2937; color: #E5E7EB; padding: 12px; border-radius: 6px; margin: 8px 0; font-family: monospace; white-space: pre-wrap; overflow-x: auto;">{code}</div>'''
+            placeholder = f"__CODE_BLOCK_{len(code_blocks)}__"
+            code_blocks.append((lang, code))
+            return placeholder
 
-        message = re.sub(r'```(\w*)\n(.*?)```', replace_code_block, message, flags=re.DOTALL)
+        # Save code blocks with placeholder
+        message = re.sub(r'```(\w*)\n?(.*?)```', save_code_block, message, flags=re.DOTALL)
 
-        # Convert inline code (`code`)
-        message = re.sub(r'`([^`]+)`', r'<code style="background-color: #E5E7EB; padding: 2px 6px; border-radius: 4px; font-family: monospace;">\1</code>', message)
+        # Save inline code
+        inline_codes = []
+        def save_inline_code(match):
+            code = match.group(1)
+            placeholder = f"__INLINE_CODE_{len(inline_codes)}__"
+            inline_codes.append(code)
+            return placeholder
+
+        message = re.sub(r'`([^`]+)`', save_inline_code, message)
+
+        # Now escape HTML for the rest
+        message = self._escape_html(message)
+
+        # Convert markdown bold: **text**
+        message = re.sub(r'\*\*(.+?)\*\*', r'<b>\1</b>', message)
+
+        # Restore code blocks with dark theme styling
+        for i, (lang, code) in enumerate(code_blocks):
+            escaped_code = self._escape_html(code.strip())
+            lang_label = f"<b style='color: #9CA3AF;'>{lang.upper()}</b><br>" if lang else ""
+            code_html = f'''<table width="100%" cellpadding="0" cellspacing="0" style="margin: 8px 0;"><tr><td style="background-color: #1F2937; padding: 12px; border-radius: 6px;"><pre style="margin: 0; color: #E5E7EB; font-family: monospace; white-space: pre-wrap; font-size: 12px;">{lang_label}{escaped_code}</pre></td></tr></table>'''
+            message = message.replace(f"__CODE_BLOCK_{i}__", code_html)
+
+        # Restore inline code
+        for i, code in enumerate(inline_codes):
+            escaped_code = self._escape_html(code)
+            inline_html = f'<code style="background-color: #E5E7EB; padding: 2px 4px; font-family: monospace;">{escaped_code}</code>'
+            message = message.replace(f"__INLINE_CODE_{i}__", inline_html)
 
         # Convert line breaks
         message = message.replace('\n', '<br>')
@@ -1517,6 +1636,279 @@ class MainWindow(QMainWindow):
         if self.last_chat_response:
             QApplication.clipboard().setText(self.last_chat_response)
             self.statusbar.showMessage("Response copied to clipboard!", 2000)
+
+    # ===== Document Library / RAG Methods =====
+
+    def _toggle_doc_library(self):
+        """Toggle document library panel visibility."""
+        if self.doc_lib_toggle.isChecked():
+            self.doc_list_widget.show()
+            self.doc_lib_toggle.setText("📚 Document Library ▼")
+            self._refresh_doc_list()
+        else:
+            self.doc_list_widget.hide()
+            self.doc_lib_toggle.setText("📚 Document Library")
+
+    def _toggle_rag_mode(self):
+        """Toggle RAG mode on/off."""
+        if self.rag_toggle_btn.isChecked():
+            # Check if there are documents
+            if self.rag_engine is None or self.rag_engine.is_empty:
+                self.rag_toggle_btn.setChecked(False)
+                QMessageBox.information(
+                    self, "No Documents",
+                    "Please add documents first before enabling RAG mode.\n\n"
+                    "Click '+ Add' to upload PDFs, Word docs, or text files."
+                )
+                return
+
+            self.rag_enabled = True
+            self.rag_toggle_btn.setText("🔍 RAG: ON")
+            self.chat_history.setPlaceholderText(
+                "📚 RAG Mode Active\n\n"
+                "Ask questions about your documents:\n"
+                "• What is the main topic of this document?\n"
+                "• Summarize the key points\n"
+                "• What does it say about [topic]?\n"
+                "• Find information about [subject]"
+            )
+            self.statusbar.showMessage("RAG enabled - AI will answer from your documents", 3000)
+        else:
+            self.rag_enabled = False
+            self.rag_toggle_btn.setText("🔍 RAG: OFF")
+            self.chat_history.setPlaceholderText(
+                "💬 Regular Chat Mode\n\n"
+                "Chat freely with AI:\n"
+                "• Write code or explain concepts\n"
+                "• Get creative writing help\n"
+                "• Answer general questions\n\n"
+                "Tip: Enable RAG to answer from documents"
+            )
+            self.statusbar.showMessage("RAG disabled - Regular AI chat mode", 2000)
+
+    def _init_rag_engine(self):
+        """Initialize RAG engine (lazy loading)."""
+        if self.rag_engine is not None:
+            return True
+
+        try:
+            from src.rag_engine import RAGEngine, check_rag_dependencies
+
+            # Check dependencies first
+            deps_ok, deps_msg = check_rag_dependencies()
+            if not deps_ok:
+                QMessageBox.warning(
+                    self, "Missing Dependencies",
+                    f"RAG feature requires additional packages:\n\n{deps_msg}"
+                )
+                return False
+
+            self.rag_engine = RAGEngine()
+            return True
+
+        except Exception as e:
+            QMessageBox.critical(self, "RAG Initialization Error", f"Failed to initialize RAG engine:\n{str(e)}")
+            return False
+
+    def _add_document_to_library(self):
+        """Add a document to the RAG library."""
+        from PyQt6.QtWidgets import QFileDialog
+
+        if not self._init_rag_engine():
+            return
+
+        file_path, _ = QFileDialog.getOpenFileName(
+            self,
+            "Add Document to Library",
+            "",
+            "Documents (*.txt *.md *.docx *.pdf);;PDF Files (*.pdf);;Word Documents (*.docx);;Text Files (*.txt);;All Files (*)"
+        )
+
+        if not file_path:
+            return
+
+        try:
+            # Read document content
+            content = self._read_document(file_path)
+            if not content:
+                QMessageBox.warning(self, "Empty Document", "The document appears to be empty.")
+                return
+
+            # Show progress
+            self.statusbar.showMessage(f"Processing: {file_path.split('/')[-1]}...")
+            self.progress_bar.setRange(0, 0)
+
+            # Add to RAG engine
+            def progress_cb(msg):
+                self.statusbar.showMessage(msg)
+
+            doc = self.rag_engine.add_document(file_path, content, progress_cb)
+
+            # Update UI
+            self.progress_bar.setRange(0, 100)
+            self._refresh_doc_list()
+
+            # Show library if hidden
+            if not self.doc_lib_toggle.isChecked():
+                self.doc_lib_toggle.setChecked(True)
+                self._toggle_doc_library()
+
+            self.statusbar.showMessage(f"Added: {doc.name} ({doc.chunk_count} chunks)", 3000)
+
+            # Update placeholder
+            self.chat_history.setPlaceholderText(
+                f"📚 {self.rag_engine.document_count} document(s) in library\n\n"
+                "Ask questions about your documents:\n"
+                "• What is the main topic?\n"
+                "• Summarize the key points\n"
+                "• What does it say about [topic]?\n"
+                "• Compare information across documents"
+            )
+
+        except Exception as e:
+            self.progress_bar.setRange(0, 100)
+            QMessageBox.critical(self, "Error Adding Document", f"Failed to add document:\n{str(e)}")
+
+    def _refresh_doc_list(self):
+        """Refresh the document list UI."""
+        if self.rag_engine is None:
+            self.doc_count_label.setText("0 documents")
+            self.doc_list_empty.show()
+            return
+
+        docs = self.rag_engine.get_documents()
+        self.doc_count_label.setText(f"{len(docs)} document{'s' if len(docs) != 1 else ''}")
+
+        # Clear existing items (except empty label)
+        for i in reversed(range(self.doc_list_layout.count())):
+            item = self.doc_list_layout.itemAt(i)
+            if item and item.widget() and item.widget() != self.doc_list_empty:
+                item.widget().deleteLater()
+
+        if not docs:
+            self.doc_list_empty.show()
+            # Disable RAG toggle if no documents
+            self.rag_toggle_btn.setChecked(False)
+            self.rag_toggle_btn.setText("🔍 RAG: OFF")
+            self.rag_enabled = False
+        else:
+            self.doc_list_empty.hide()
+            # Auto-enable RAG when documents are present
+            if not self.rag_enabled:
+                self.rag_toggle_btn.setChecked(True)
+                self.rag_toggle_btn.setText("🔍 RAG: ON")
+                self.rag_enabled = True
+
+            for doc in docs:
+                doc_item = QFrame()
+                doc_item.setStyleSheet("""
+                    QFrame {
+                        background-color: #F9FAFB;
+                        border: 1px solid #E5E7EB;
+                        border-radius: 4px;
+                        padding: 4px;
+                    }
+                    QFrame:hover {
+                        background-color: #F3F4F6;
+                    }
+                """)
+                item_layout = QHBoxLayout(doc_item)
+                item_layout.setContentsMargins(8, 6, 8, 6)
+                item_layout.setSpacing(8)
+
+                # Document icon based on extension
+                icon = "📄"
+                if doc.name.endswith('.pdf'):
+                    icon = "📕"
+                elif doc.name.endswith('.docx'):
+                    icon = "📘"
+                elif doc.name.endswith('.md'):
+                    icon = "📝"
+
+                icon_label = QLabel(icon)
+                item_layout.addWidget(icon_label)
+
+                name_label = QLabel(doc.name)
+                name_label.setStyleSheet("color: #1F2937; font-size: 12px;")
+                item_layout.addWidget(name_label)
+
+                chunks_label = QLabel(f"{doc.chunk_count} chunks")
+                chunks_label.setStyleSheet("color: #9CA3AF; font-size: 11px;")
+                item_layout.addWidget(chunks_label)
+
+                item_layout.addStretch()
+
+                remove_btn = QPushButton("Remove")
+                remove_btn.setFixedHeight(24)
+                remove_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+                remove_btn.setStyleSheet("""
+                    QPushButton {
+                        background-color: #FEE2E2;
+                        color: #DC2626;
+                        border: none;
+                        border-radius: 4px;
+                        padding: 2px 8px;
+                        font-size: 11px;
+                        font-weight: 600;
+                    }
+                    QPushButton:hover {
+                        background-color: #EF4444;
+                        color: white;
+                    }
+                """)
+                remove_btn.clicked.connect(lambda checked, d=doc: self._remove_document_from_library(d.id, d.name))
+                item_layout.addWidget(remove_btn)
+
+                self.doc_list_layout.addWidget(doc_item)
+
+    def _remove_document_from_library(self, doc_id: str, doc_name: str):
+        """Remove a document and its embeddings from the RAG library."""
+        reply = QMessageBox.question(
+            self, "Remove Document",
+            f"Remove '{doc_name}' from the library?\n\nThis will delete all embeddings for this document.",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+        )
+
+        if reply == QMessageBox.StandardButton.Yes:
+            if self.rag_engine.remove_document(doc_id):
+                self._refresh_doc_list()
+                self.statusbar.showMessage(f"Removed: {doc_name} (embeddings deleted)", 3000)
+
+                # Update placeholder if no documents left
+                if self.rag_engine.is_empty:
+                    self._reset_chat_placeholder()
+
+    def _clear_all_documents(self):
+        """Clear all documents and embeddings from the RAG library."""
+        if self.rag_engine is None or self.rag_engine.is_empty:
+            self.statusbar.showMessage("No documents to clear", 2000)
+            return
+
+        doc_count = self.rag_engine.document_count
+        reply = QMessageBox.question(
+            self, "Clear All Documents",
+            f"Remove all {doc_count} document(s) from the library?\n\n"
+            "This will delete all embeddings and cannot be undone.",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+        )
+
+        if reply == QMessageBox.StandardButton.Yes:
+            self.rag_engine.clear_all()
+            self._refresh_doc_list()
+            self._reset_chat_placeholder()
+            self.statusbar.showMessage(f"Cleared {doc_count} document(s) and all embeddings", 3000)
+
+    def _reset_chat_placeholder(self):
+        """Reset chat placeholder to default state."""
+        self.chat_history.setPlaceholderText(
+            "💬 AI Chat - Two Modes Available:\n\n"
+            "📚 RAG Mode (Document Q&A):\n"
+            "   Add documents above, then ask questions about them.\n"
+            "   AI will only answer from your documents.\n\n"
+            "💭 Regular Mode:\n"
+            "   Chat freely - write code, explain concepts, get help.\n\n"
+            "Toggle RAG on/off using the button above."
+        )
 
     def _export_output(self, format_type: str):
         """Export output to file."""
@@ -1553,8 +1945,7 @@ class MainWindow(QMainWindow):
             metadata = {
                 'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M'),
                 'mode': self.mode_combo.currentText(),
-                'creativity': self.creativity_slider.value(),
-                'ai_score': self.ai_score_after
+                'creativity': self.creativity_slider.value()
             }
 
             result = self.export_manager.export(
@@ -1567,37 +1958,6 @@ class MainWindow(QMainWindow):
                 self.statusbar.showMessage(f"Exported to {file_path}", 3000)
             else:
                 QMessageBox.critical(self, "Export Error", result.message)
-
-    def _check_ai_score(self):
-        """Check AI detection score of current text."""
-        # Use output text if available, otherwise input
-        text = self.output_text.toPlainText() or self.input_text.toPlainText()
-        if not text.strip():
-            self.statusbar.showMessage("No text to analyze", 2000)
-            return
-
-        if not self.model_loaded:
-            # Use heuristic analysis only
-            self.ai_detector.set_model(None)
-        else:
-            self.ai_detector.set_model(self.humanizer.model)
-
-        self.stage_label.setText("Analyzing AI probability...")
-        self.progress_bar.setRange(0, 0)  # Indeterminate
-
-        self.ai_worker = AIDetectorWorker(self.ai_detector, text, use_llm=self.model_loaded)
-        self.ai_worker.progress.connect(lambda msg: self.stage_label.setText(msg))
-        self.ai_worker.finished.connect(self._on_ai_analysis_complete)
-        self.ai_worker.start()
-
-    def _on_ai_analysis_complete(self, result: TextAnalysisResult):
-        """Handle AI analysis completion."""
-        self.progress_bar.setRange(0, 100)
-        self.progress_bar.setValue(0)
-        self.stage_label.setText("Ready")
-
-        self.style_score_widget.set_score(result.overall_score)
-        self.statusbar.showMessage(result.summary, 5000)
 
     def _humanize_text(self):
         """Start text humanization or chat generation."""
@@ -1620,15 +1980,17 @@ class MainWindow(QMainWindow):
         # Get mode (use itemData which contains the actual mode key)
         mode = self.mode_combo.currentData() or "professional"
 
-        # Update UI
+        # Update UI - hide all action buttons during processing
         self.humanize_btn.hide()
+        self.summarize_btn.hide()
+        self.expand_btn.hide()
         self.cancel_text_btn.show()
         self.output_text.clear()
         self.progress_bar.setRange(0, 0)
 
         # Enhancement mode - transform text according to selected style
         self.humanizer.creativity_level = self.creativity_slider.value()
-        self.paraphraser.set_style(mode)
+        self.humanizer.set_style(mode)  # Set style on humanizer for mode-specific prompts
 
         self.stage_label.setText(f"Transforming to {mode} style...")
         self.text_worker = TextHumanizeWorker(self.humanizer, text)
@@ -1640,6 +2002,8 @@ class MainWindow(QMainWindow):
         """Handle humanization completion."""
         self.cancel_text_btn.hide()
         self.humanize_btn.show()
+        self.summarize_btn.show()
+        self.expand_btn.show()
         self.progress_bar.setRange(0, 100)
         self.progress_bar.setValue(0)
 
@@ -1661,12 +2025,8 @@ class MainWindow(QMainWindow):
             creativity = self.creativity_slider.value()
             add_to_history(
                 self.original_text, result, mode, creativity,
-                self.ai_score_before, None  # ai_score_after updated later
+                None, None
             )
-
-            # Auto-check AI score
-            if self.settings.auto_check_ai:
-                QTimer.singleShot(500, self._check_ai_score_and_highlight)
         else:
             self.stage_label.setText("Failed" if not result else result)
             if result and result.startswith("Error"):
@@ -1680,9 +2040,141 @@ class MainWindow(QMainWindow):
 
         self.cancel_text_btn.hide()
         self.humanize_btn.show()
+        self.summarize_btn.show()
+        self.expand_btn.show()
         self.progress_bar.setRange(0, 100)
         self.progress_bar.setValue(0)
         self.stage_label.setText("Cancelled")
+
+    def _summarize_text(self):
+        """Summarize the input text."""
+        text = self.input_text.toPlainText()
+        if not text.strip():
+            self.statusbar.showMessage("Please enter some text first", 3000)
+            return
+        if not self.model_loaded:
+            self.statusbar.showMessage("Please select and load a model first", 3000)
+            QMessageBox.information(
+                self, "Model Required",
+                "Please select an AI model from the dropdown first.\n\n"
+                "The model will download automatically on first use."
+            )
+            return
+
+        # Store original for comparison
+        self.original_text = text
+
+        # Update UI - hide all action buttons during processing
+        self.humanize_btn.hide()
+        self.summarize_btn.hide()
+        self.expand_btn.hide()
+        self.cancel_text_btn.show()
+        self.output_text.clear()
+        self.progress_bar.setRange(0, 0)
+
+        # Set mode to summarize
+        self.humanizer.creativity_level = 30  # Lower creativity for summarization
+        self.humanizer.set_style("summarize")
+
+        self.stage_label.setText("Summarizing text...")
+        self.text_worker = TextHumanizeWorker(self.humanizer, text)
+        self.text_worker.progress.connect(lambda msg: self.stage_label.setText(msg))
+        self.text_worker.finished.connect(self._on_summarize_finished)
+        self.text_worker.start()
+
+    def _on_summarize_finished(self, success: bool, result: str):
+        """Handle summarization completion."""
+        self.cancel_text_btn.hide()
+        self.humanize_btn.show()
+        self.summarize_btn.show()
+        self.expand_btn.show()
+        self.progress_bar.setRange(0, 100)
+        self.progress_bar.setValue(0)
+
+        if success and result:
+            self.output_text.setPlainText(result)
+            word_count = len(result.split())
+            original_word_count = len(self.original_text.split())
+            reduction = int((1 - word_count / original_word_count) * 100) if original_word_count > 0 else 0
+            self.output_word_count.setText(f"{word_count} words ({reduction}% shorter)")
+            self.copy_btn.setEnabled(True)
+            self.refine_btn.setEnabled(True)
+            self.stage_label.setText("Summary complete!")
+
+            # Save to history
+            add_to_history(
+                self.original_text, result, "Summarize", 30,
+                None, None
+            )
+        else:
+            self.stage_label.setText("Failed" if not result else result)
+            if result and result.startswith("Error"):
+                QMessageBox.warning(self, "Error", result)
+
+    def _expand_text(self):
+        """Expand the input text with more detail."""
+        text = self.input_text.toPlainText()
+        if not text.strip():
+            self.statusbar.showMessage("Please enter some text first", 3000)
+            return
+        if not self.model_loaded:
+            self.statusbar.showMessage("Please select and load a model first", 3000)
+            QMessageBox.information(
+                self, "Model Required",
+                "Please select an AI model from the dropdown first.\n\n"
+                "The model will download automatically on first use."
+            )
+            return
+
+        # Store original for comparison
+        self.original_text = text
+
+        # Update UI - hide all action buttons during processing
+        self.humanize_btn.hide()
+        self.summarize_btn.hide()
+        self.expand_btn.hide()
+        self.cancel_text_btn.show()
+        self.output_text.clear()
+        self.progress_bar.setRange(0, 0)
+
+        # Set mode to expand
+        self.humanizer.creativity_level = 60  # Higher creativity for expansion
+        self.humanizer.set_style("expand")
+
+        self.stage_label.setText("Expanding text...")
+        self.text_worker = TextHumanizeWorker(self.humanizer, text)
+        self.text_worker.progress.connect(lambda msg: self.stage_label.setText(msg))
+        self.text_worker.finished.connect(self._on_expand_finished)
+        self.text_worker.start()
+
+    def _on_expand_finished(self, success: bool, result: str):
+        """Handle expansion completion."""
+        self.cancel_text_btn.hide()
+        self.humanize_btn.show()
+        self.summarize_btn.show()
+        self.expand_btn.show()
+        self.progress_bar.setRange(0, 100)
+        self.progress_bar.setValue(0)
+
+        if success and result:
+            self.output_text.setPlainText(result)
+            word_count = len(result.split())
+            original_word_count = len(self.original_text.split())
+            expansion = int((word_count / original_word_count - 1) * 100) if original_word_count > 0 else 0
+            self.output_word_count.setText(f"{word_count} words ({expansion}% longer)")
+            self.copy_btn.setEnabled(True)
+            self.refine_btn.setEnabled(True)
+            self.stage_label.setText("Expansion complete!")
+
+            # Save to history
+            add_to_history(
+                self.original_text, result, "Expand", 60,
+                None, None
+            )
+        else:
+            self.stage_label.setText("Failed" if not result else result)
+            if result and result.startswith("Error"):
+                QMessageBox.warning(self, "Error", result)
 
     def _on_model_selected(self, model_id: str, model_path: str):
         """Handle model selection from dropdown."""
@@ -1743,108 +2235,6 @@ class MainWindow(QMainWindow):
             self.stage_label.setText(message)
             QMessageBox.critical(self, "Model Error", message)
 
-    def browse_pdf(self):
-        """Browse for PDF file."""
-        file_path, _ = QFileDialog.getOpenFileName(
-            self,
-            "Select PDF File",
-            "",
-            "PDF Files (*.pdf)"
-        )
-        if file_path:
-            self.load_pdf(file_path)
-
-    def load_pdf(self, file_path: str):
-        """Load a PDF file."""
-        self.current_pdf_path = file_path
-        filename = Path(file_path).name
-        self.drop_zone.set_file(filename)
-
-        # Load preview
-        try:
-            preview = extract_text_for_preview(file_path, max_chars=3000)
-            self.preview_text.setPlainText(preview)
-        except Exception as e:
-            self.preview_text.setPlainText(f"Error loading preview: {e}")
-
-        # Enable process button if model loaded
-        self.process_btn.setEnabled(self.model_loaded)
-        self.statusbar.showMessage(f"Loaded: {filename}")
-
-    def _process_pdf(self):
-        """Process the loaded PDF."""
-        if not self.current_pdf_path or not self.model_loaded:
-            return
-
-        # Get output path
-        input_path = Path(self.current_pdf_path)
-        default_output = input_path.parent / f"{input_path.stem}_paraphrased.pdf"
-
-        output_path, _ = QFileDialog.getSaveFileName(
-            self,
-            "Save Paraphrased PDF",
-            str(default_output),
-            "PDF Files (*.pdf)"
-        )
-
-        if not output_path:
-            return
-
-        # Get settings
-        style = self.mode_combo.currentText()
-        min_words = self.min_words_spin.value()
-
-        # Start worker
-        self.current_worker = FullProcessWorker(
-            self.paraphraser,
-            self.current_pdf_path,
-            output_path,
-            style,
-            min_words
-        )
-        self.current_worker.progress.connect(self._on_pdf_progress)
-        self.current_worker.stage_changed.connect(lambda s: self.stage_label.setText(f"Stage: {s}"))
-        self.current_worker.finished.connect(self._on_pdf_finished)
-        self.current_worker.start()
-
-        # Update UI
-        self.process_btn.hide()
-        self.cancel_pdf_btn.show()
-        self.drop_zone.setEnabled(False)
-
-    def _on_pdf_progress(self, current: int, total: int, message: str):
-        """Handle PDF processing progress."""
-        self.progress_bar.setMaximum(total)
-        self.progress_bar.setValue(current)
-        pct = int((current / total) * 100) if total > 0 else 0
-        self.stage_label.setText(f"{message} ({pct}%)")
-
-    def _on_pdf_finished(self, success: bool, message: str):
-        """Handle PDF processing completion."""
-        self.cancel_pdf_btn.hide()
-        self.process_btn.show()
-        self.drop_zone.setEnabled(True)
-        self.progress_bar.setValue(0)
-
-        if success:
-            self.stage_label.setText("Complete!")
-            QMessageBox.information(self, "Success", message)
-        else:
-            self.stage_label.setText("Failed")
-            QMessageBox.critical(self, "Error", message)
-
-    def _cancel_processing(self):
-        """Cancel PDF processing."""
-        if self.current_worker and self.current_worker.isRunning():
-            self.current_worker.cancel()
-            self.current_worker.wait(2000)
-
-        self.cancel_pdf_btn.hide()
-        self.process_btn.show()
-        self.drop_zone.setEnabled(True)
-        self.progress_bar.setValue(0)
-        self.stage_label.setText("Cancelled")
-
     # ===== New Feature Methods =====
 
     def _show_diff_output(self, original: str, humanized: str):
@@ -1876,88 +2266,6 @@ class MainWindow(QMainWindow):
         """Toggle AI sentence highlighting."""
         self.highlight_enabled = self.highlight_action.isChecked()
 
-    def _check_ai_score_and_highlight(self):
-        """Check AI score and apply sentence highlighting."""
-        text = self.output_text.toPlainText()
-        if not text.strip():
-            return
-
-        if not self.model_loaded:
-            self.ai_detector.set_model(None)
-        else:
-            self.ai_detector.set_model(self.humanizer.model)
-
-        self.stage_label.setText("Analyzing AI probability...")
-        self.progress_bar.setRange(0, 0)
-
-        self.ai_worker = AIDetectorWorker(self.ai_detector, text, use_llm=self.model_loaded)
-        self.ai_worker.progress.connect(lambda msg: self.stage_label.setText(msg))
-        self.ai_worker.finished.connect(self._on_ai_analysis_with_highlight)
-        self.ai_worker.start()
-
-    def _on_ai_analysis_with_highlight(self, result: TextAnalysisResult):
-        """Handle AI analysis and apply highlighting."""
-        self.progress_bar.setRange(0, 100)
-        self.progress_bar.setValue(0)
-        self.stage_label.setText("Ready")
-
-        self.style_score_widget.set_score(result.overall_score)
-        self.ai_score_after = result.overall_score
-        self.statusbar.showMessage(result.summary, 5000)
-
-        # Apply sentence highlighting if enabled
-        if self.highlight_enabled and result.sentence_analyses:
-            self._apply_sentence_highlighting(result)
-
-    def _apply_sentence_highlighting(self, result: TextAnalysisResult):
-        """Apply color highlighting to sentences based on AI probability."""
-        text = self.output_text.toPlainText()
-        cursor = self.output_text.textCursor()
-
-        # Build HTML with highlighted sentences
-        html_parts = []
-        last_end = 0
-
-        for analysis in result.sentence_analyses:
-            # Add any text before this sentence
-            if analysis.start_idx > last_end:
-                before_text = text[last_end:analysis.start_idx]
-                html_parts.append(self._escape_html(before_text))
-
-            # Determine color based on AI probability
-            prob = analysis.ai_probability
-            if prob < 0.3:
-                bg_color = "#D1FAE5"  # Green - human-like
-            elif prob < 0.6:
-                bg_color = "#FEF3C7"  # Yellow - mixed
-            else:
-                bg_color = "#FEE2E2"  # Red - AI-like
-
-            sentence_html = (
-                f'<span style="background-color: {bg_color}; '
-                f'border-radius: 3px; padding: 1px 3px;">'
-                f'{self._escape_html(analysis.text)}</span>'
-            )
-            html_parts.append(sentence_html)
-            last_end = analysis.end_idx
-
-        # Add remaining text
-        if last_end < len(text):
-            html_parts.append(self._escape_html(text[last_end:]))
-
-        # Set HTML content
-        self.output_text.setHtml(''.join(html_parts))
-
-    def _escape_html(self, text: str) -> str:
-        """Escape HTML special characters."""
-        return (text
-                .replace("&", "&amp;")
-                .replace("<", "&lt;")
-                .replace(">", "&gt;")
-                .replace('"', "&quot;")
-                .replace("'", "&#39;")
-                .replace("\n", "<br>"))
-
     def _show_history(self):
         """Show history dialog."""
         from ui.history_dialog import show_history_dialog
@@ -1968,11 +2276,6 @@ class MainWindow(QMainWindow):
             self.output_text.setPlainText(humanized)
             self.original_text = original
             self.copy_btn.setEnabled(True)
-
-    def _show_batch_dialog(self):
-        """Show batch processing dialog."""
-        from ui.batch_dialog import show_batch_dialog
-        show_batch_dialog(self.humanizer, self)
 
     def _show_onboarding(self):
         """Show onboarding tutorial."""
@@ -1996,9 +2299,9 @@ class MainWindow(QMainWindow):
             "<p><b>Features:</b></p>"
             "<ul>"
             "<li>5 curated AI models to choose from</li>"
-            "<li>11 writing enhancement modes</li>"
+            "<li>5 writing enhancement modes</li>"
             "<li>Real-time writing statistics</li>"
-            "<li>PDF enhancement with layout preservation</li>"
+            "<li>AI Chat assistant</li>"
             "<li>Dark mode support</li>"
             "</ul>"
             "<p style='color: #6B7280;'>A Svetozar Technologies project</p>"
@@ -2125,11 +2428,15 @@ class MainWindow(QMainWindow):
 
         if obj == self.chat_input and event.type() == QEvent.Type.KeyPress:
             key_event = event
-            # Ctrl+Enter or Cmd+Enter to send message
-            if (key_event.key() == Qt.Key.Key_Return and
-                key_event.modifiers() & Qt.KeyboardModifier.ControlModifier):
-                self._send_chat_message()
-                return True
+            # Enter to send message (Shift+Enter for new line)
+            if key_event.key() in (Qt.Key.Key_Return, Qt.Key.Key_Enter):
+                if key_event.modifiers() & Qt.KeyboardModifier.ShiftModifier:
+                    # Shift+Enter: insert new line
+                    return False  # Let the default handler insert newline
+                else:
+                    # Enter: send message
+                    self._send_chat_message()
+                    return True
 
         return super().eventFilter(obj, event)
 
@@ -2144,7 +2451,7 @@ class MainWindow(QMainWindow):
         save_settings()
 
         # Check for running workers
-        workers = [self.current_worker, self.model_worker, self.text_worker, self.ai_worker, self.refine_worker, self.chat_worker]
+        workers = [self.model_worker, self.text_worker, self.refine_worker, self.chat_worker]
         running = [w for w in workers if w and w.isRunning()]
 
         if running:
@@ -2170,7 +2477,5 @@ class MainWindow(QMainWindow):
             self.paraphraser.unload_model()
         if self.humanizer:
             self.humanizer.unload_model()
-        if self.pdf_processor:
-            self.pdf_processor.close()
 
         event.accept()
